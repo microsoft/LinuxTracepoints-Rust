@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Microsoft"]
 license = "MIT"
 description = "Rust macros for eventheader-encoded Linux Tracepoints via user_events"
-repository = "https://github.com/microsoft/LinuxTracepoints"
+repository = "https://github.com/microsoft/LinuxTracepoints-Rust"
 readme = "README.md"
 rust-version = "1.63"
 

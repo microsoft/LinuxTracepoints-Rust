@@ -38,7 +38,7 @@
 //! - Collect traces using a tool like
 //!   [`perf`](https://perf.wiki.kernel.org/index.php).
 //! - Decode traces using a tool like
-//!   [`decode-perf`](https://github.com/microsoft/LinuxTracepoints).
+//!   [`decode-perf`](https://github.com/microsoft/LinuxTracepoints-Rust).
 //!
 //! # Overview
 //!
@@ -105,13 +105,13 @@
 //!
 //! Collect the events using a tool like [`perf`](https://perf.wiki.kernel.org/index.php).
 //! Decode the events using a tool like
-//! [`decode-perf`](https://github.com/microsoft/LinuxTracepoints).
+//! [`decode-perf`](https://github.com/microsoft/LinuxTracepoints-Rust).
 //!
 //! Note that you cannot enable a tracepoint until the tracepoint has been registered.
 //! Most programs will register all of their tracepoints when they start running, so
 //! you can run the program once and then create the session to collect the events.
 //! As an alternative, you can pre-register eventheader-based tracepoints using a tool
-//! like [`eventheader-register`](https://github.com/microsoft/LinuxTracepoints).
+//! like [`eventheader-register`](https://github.com/microsoft/LinuxTracepoints-Rust).
 //!
 //! For example, to collect and decode events with level=5 and keyword=1 from a provider
 //! that was defined as `define_provider!(MY_PROVIDER, "MyCompany_MyComponent")`:
