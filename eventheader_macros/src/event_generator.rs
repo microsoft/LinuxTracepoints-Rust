@@ -240,7 +240,7 @@ impl EventGenerator {
         static _EH_TRACEPOINT = EventHeaderTracepoint::new(...);
         static _EH_TRACEPOINT_PTR = &_EH_TRACEPOINT;
         if !_EH_TRACEPOINT.enabled() {
-            0u32
+            9u32 // EBADF
         } else {
             enabled_tree...
         }
@@ -369,14 +369,14 @@ impl EventGenerator {
                     .drain(),
             )
             .add_punct(";")
-            // if !_EH_TRACEPOINT.enabled() { 0u32 }
+            // if !_EH_TRACEPOINT.enabled() { 9u32 } // EBADF
             .add_ident("if")
             .add_punct("!")
             .add_ident(EH_TRACEPOINT_STATIC)
             .add_punct(".")
             .add_ident(EH_TRACEPOINT_ENABLED)
             .add_group_paren([])
-            .add_group_curly(self.tree1.add_literal(Literal::u32_suffixed(0)).drain())
+            .add_group_curly(self.tree1.add_literal(Literal::u32_suffixed(9)).drain()) // 9 = EBADF
             // else { enabled_tree... }
             .add_ident("else")
             .add_group_curly(self.enabled_tree.drain());

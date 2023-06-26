@@ -254,7 +254,13 @@ fn provider_panic() {
     eh::define_provider!(PROV3, "TraceLoggingDynamicTest");
     eh::write_event!(PROV3, "Default");
     let _u = Unregister(&PROV3);
-    unsafe { PROV3.register() };
+
+    if 0 != unsafe { PROV3.register() } {
+        // If register fails (e.g. if running on downlevel kernel) then make test pass.
+        panic!("register not successful");
+    }
+
+    // Registering an already-registered provider should panic.
     unsafe { PROV3.register() };
 }
 
@@ -278,7 +284,7 @@ fn write_event() {
         "4v2o6t123c0l3k11",
         id_version(4, 2),
         opcode(6),
-        task(123), // Task is ignored by eventheader.
+        task(123),  // Task is ignored by eventheader.
         channel(0), // Channel is ignored by eventheader.
         level(3),
         keyword(0x11),

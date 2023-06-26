@@ -483,7 +483,7 @@ impl TracepointState {
         let enable_status = self.enable_status.load(Ordering::Relaxed);
         let write_index = self.write_index.load(Ordering::Relaxed);
         if enable_status == 0 || write_index > Self::HIGHEST_VALID_WRITE_INDEX {
-            return 0;
+            return 9; // linux::EBADF
         }
 
         let writev_result = self.writev(data, &write_index.to_ne_bytes());
@@ -520,7 +520,7 @@ impl TracepointState {
         let enable_status = self.enable_status.load(Ordering::Relaxed);
         let write_index = self.write_index.load(Ordering::Relaxed);
         if enable_status == 0 || write_index > Self::HIGHEST_VALID_WRITE_INDEX {
-            return 0;
+            return 9; // linux::EBADF
         }
 
         let mut extension_count = (activity_id.is_some() as u8) + ((meta_len != 0) as u8);

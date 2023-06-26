@@ -404,7 +404,7 @@ pub use eventheader_macros::define_provider;
 ///
 /// ```ignore
 /// if !MY_PROVIDER.enabled(event_level, event_keyword) {
-///     0
+///     9 // EBADF
 /// } else {
 ///     writev(MY_PROVIDER, options and fields...)
 /// }
@@ -419,8 +419,8 @@ pub use eventheader_macros::define_provider;
 /// to the provider with filters that include the level and keyword of the event.
 ///
 /// The `write_event!` macro returns a `u32` value with an errno result code. If no
-/// logging sessions are listening for the event, `write_event!` immediately returns 0.
-/// Otherwise, it returns the value returned by the underlying `writev` API. Since most
+/// logging sessions are listening for the event, `write_event!` immediately returns `EBADF`
+/// (9). Otherwise, it returns the value returned by the underlying `writev` API. Since most
 /// components treat logging APIs as fire-and-forget, this value should normally be ignored
 /// in production code. It is generally used only for debugging and troubleshooting.
 ///
