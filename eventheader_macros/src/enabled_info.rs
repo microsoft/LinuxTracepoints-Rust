@@ -36,10 +36,8 @@ impl EnabledInfo {
 
         // level
 
-        enabled.level = root_parser.next_tokens(
-            Required,
-            "expected constant for level, e.g. Level::Verbose",
-        );
+        enabled.level =
+            root_parser.next_tokens(Required, "expected constant for level, e.g. Level::Verbose");
 
         // keyword
 

@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 use alloc::vec::Vec;
-use core::mem::size_of;
+use core::mem;
 use core::ptr::copy_nonoverlapping;
 
 use eventheader::FieldEncoding;
@@ -48,7 +48,7 @@ impl StringField for u16 {}
 impl StringField for u32 {}
 
 trait ValueFieldEncoding: ValueField {
-    const VALUE_ENCODING: FieldEncoding = match size_of::<Self>() {
+    const VALUE_ENCODING: FieldEncoding = match mem::size_of::<Self>() {
         1 => FieldEncoding::Value8,
         2 => FieldEncoding::Value16,
         4 => FieldEncoding::Value32,
@@ -61,13 +61,13 @@ trait ValueFieldEncoding: ValueField {
 impl<T: ValueField> ValueFieldEncoding for T {}
 
 trait StringFieldEncoding: StringField {
-    const STRING_ENCODING: FieldEncoding = match size_of::<Self>() {
+    const STRING_ENCODING: FieldEncoding = match mem::size_of::<Self>() {
         1 => FieldEncoding::StringLength16Char8,
         2 => FieldEncoding::StringLength16Char16,
         4 => FieldEncoding::StringLength16Char32,
         _ => panic!(),
     };
-    const ZSTRING_ENCODING: FieldEncoding = match size_of::<Self>() {
+    const ZSTRING_ENCODING: FieldEncoding = match mem::size_of::<Self>() {
         1 => FieldEncoding::ZStringChar8,
         2 => FieldEncoding::ZStringChar16,
         4 => FieldEncoding::ZStringChar32,
@@ -211,10 +211,11 @@ impl EventBuilder {
     ///   activity does not have a parent activity. If `activity_id` is `None`, this must
     ///   also be `None`.
     ///
-    /// Returns 0 for success. Returns a nonzero `errno` value for failure. The return
-    /// value is for diagnostic/debugging purposes only and should generally be ignored
-    /// in retail builds. Returns `ERANGE` (34) if the event (headers + metadata + data)
-    /// is greater than 64KB. Returns other errors as reported by `writev`.
+    /// Returns 0 for success. Returns `EBADF` (9) if no consumer is listening to this
+    /// tracepoint. Returns `ERANGE` (34) if the event (headers + metadata + data) is
+    /// greater than 64KB. Returns other errors as reported by `writev`. The return value
+    /// is for diagnostic/debugging purposes only and should generally be ignored in retail
+    /// builds.
     pub fn write(
         &self,
         event_set: &EventSet,
@@ -677,7 +678,7 @@ impl EventBuilder {
     /// the EventHeader encoding system. If done incorrectly, the resulting events will not
     /// decode properly.
     pub fn raw_add_data_value<T: Copy>(&mut self, value: &T) -> &mut Self {
-        let value_size = size_of::<T>();
+        let value_size = mem::size_of::<T>();
         let old_data_size = self.data.len();
         self.data.reserve(value_size);
         unsafe {
@@ -701,7 +702,7 @@ impl EventBuilder {
     /// the EventHeader encoding system. If done incorrectly, the resulting events will not
     /// decode properly.
     pub fn raw_add_data_slice<T: Copy>(&mut self, value: &[T]) -> &mut Self {
-        let value_size = value.len() * size_of::<T>();
+        let value_size = mem::size_of_val(value);
         let old_data_size = self.data.len();
         self.data.reserve(value_size);
         unsafe {

@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 use core::marker::PhantomData;
-use core::mem::size_of;
+use core::mem;
 
 use crate::enums::ExtensionKind;
 use crate::enums::HeaderFlags;
@@ -204,7 +204,7 @@ impl<'a> EventDataDescriptor<'a> {
     pub fn from_value<T: Copy>(value: &'a T) -> Self {
         return Self {
             ptr: value as *const T as usize,
-            size: size_of::<T>(),
+            size: mem::size_of::<T>(),
             lifetime: PhantomData,
         };
     }
@@ -238,7 +238,7 @@ impl<'a> EventDataDescriptor<'a> {
 
         return Self {
             ptr: value.as_ptr() as usize,
-            size: size_of::<T>() * value.len(),
+            size: mem::size_of_val(value),
             lifetime: PhantomData,
         };
     }
@@ -258,7 +258,7 @@ impl<'a> EventDataDescriptor<'a> {
 
         return Self {
             ptr: value.as_ptr() as usize,
-            size: size_of::<T>() * value.len(),
+            size: mem::size_of_val(value),
             lifetime: PhantomData,
         };
     }
