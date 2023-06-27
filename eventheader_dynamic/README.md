@@ -1,5 +1,21 @@
 # EventHeader for Rust
 
+[![Crates.io][crates-badge]][crates-url]
+[![Documentation][docs-badge]][docs-url]
+[![MIT licensed][mit-badge]][mit-url]
+[![Build Status][actions-badge]][actions-url]
+![maintenance status][maint-badge]
+
+[crates-badge]: https://img.shields.io/crates/v/eventheader_dynamic.svg
+[crates-url]: https://crates.io/crates/eventheader_dynamic
+[docs-badge]: https://docs.rs/eventheader_dynamic/badge.svg
+[docs-url]: https://docs.rs/eventheader_dynamic
+[mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[mit-url]: LICENSE
+[actions-badge]: https://github.com/microsoft/LinuxTracepoints-Rust/actions/workflows/Rust.yml/badge.svg
+[actions-url]: https://github.com/microsoft/LinuxTracepoints-Rust/actions/workflows/Rust.yml
+[maint-badge]: https://img.shields.io/badge/maintenance-experimental-blue.svg
+
 The `eventheader_dynamic` crate provides a flexible way to log
 `EventHeader`-encoded
 [Tracepoints](https://www.kernel.org/doc/html/latest/trace/tracepoints.html)
