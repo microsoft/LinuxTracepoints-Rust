@@ -11,7 +11,7 @@
 [docs-badge]: https://docs.rs/eventheader_dynamic/badge.svg
 [docs-url]: https://docs.rs/eventheader_dynamic
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
-[mit-url]: LICENSE
+[mit-url]: https://github.com/microsoft/LinuxTracepoints-Rust/blob/main/LICENSE
 [actions-badge]: https://github.com/microsoft/LinuxTracepoints-Rust/actions/workflows/Rust.yml/badge.svg
 [actions-url]: https://github.com/microsoft/LinuxTracepoints-Rust/actions/workflows/Rust.yml
 [maint-badge]: https://img.shields.io/badge/maintenance-experimental-blue.svg
