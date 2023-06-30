@@ -3,7 +3,7 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
-/// # v0.3.0 (2023-06-26)
+/// # v0.3.0 (2023-06-29)
 /// - If no consumers have enabled a tracepoint, the kernel now returns
 ///   `EBADF`. The eventheader_dynamic crate has been updated to be
 ///   consistent with the new behavior.
