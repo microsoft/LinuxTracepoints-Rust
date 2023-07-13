@@ -3,6 +3,9 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
+/// # v0.3.1 (2023-07-12)
+/// - Use `c_char` instead of `i8` for ffi strings.
+
 /// # v0.3.0 (2023-06-29)
 /// - If no consumers have enabled a tracepoint, the kernel now returns
 ///   `EBADF`. The eventheader crate has been updated to be consistent with

@@ -93,8 +93,8 @@ impl UserEventsDataFile {
             clear_errno();
             let mounts_file = unsafe {
                 linux::fopen(
-                    "/proc/mounts\0".as_ptr().cast::<i8>(),
-                    "r\0".as_ptr().cast::<i8>(),
+                    "/proc/mounts\0".as_ptr().cast::<ffi::c_char>(),
+                    "r\0".as_ptr().cast::<ffi::c_char>(),
                 )
             };
             if mounts_file.is_null() {
@@ -104,8 +104,8 @@ impl UserEventsDataFile {
                 loop {
                     let fgets_result = unsafe {
                         linux::fgets(
-                            line.as_mut_ptr().cast::<i8>(),
-                            line.len() as i32,
+                            line.as_mut_ptr().cast::<ffi::c_char>(),
+                            line.len() as ffi::c_int,
                             mounts_file,
                         )
                     };
@@ -180,7 +180,7 @@ impl UserEventsDataFile {
                     // "/sys/kernel/debug/tracing/user_events_data\0".
                     clear_errno();
                     let new_file =
-                        unsafe { linux::open(line.as_ptr().cast::<i8>(), linux::O_RDWR) };
+                        unsafe { linux::open(line.as_ptr().cast::<ffi::c_char>(), linux::O_RDWR) };
                     if 0 > new_file {
                         new_file_or_error = -get_failure_errno();
                     } else {
