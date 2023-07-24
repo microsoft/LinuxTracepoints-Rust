@@ -1,6 +1,6 @@
 [package]
 name = "eventheader_dynamic"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 authors = ["Microsoft"]
 license = "MIT"
@@ -28,7 +28,7 @@ default = ["user_events"]
 user_events = ["eventheader/user_events"] # Logging is enabled if Linux && user_events.
 
 [dependencies]
-eventheader = { default-features = false, version = "= 0.3.1", path = "../eventheader" }
+eventheader = { default-features = false, version = "= 0.3.2", path = "../eventheader" }
 
 [dev-dependencies]
 uuid  = ">= 1.1"
