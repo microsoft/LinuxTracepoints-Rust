@@ -90,6 +90,8 @@ impl UserEventsDataFile {
             // Need to find the ".../tracing/user_events_data" file in tracefs or debugfs.
 
             // Determine tracefs/debugfs mount point by parsing "/proc/mounts".
+            // Prefer "tracefs" over "debugfs": if we find a debugfs, save the path but
+            // keep looking in case we find a tracefs later.
             clear_errno();
             let mounts_file = unsafe {
                 linux::fopen(
@@ -100,6 +102,7 @@ impl UserEventsDataFile {
             if mounts_file.is_null() {
                 new_file_or_error = -get_failure_errno();
             } else {
+                let mut path = [0u8; 274]; // 256 + sizeof("/user_events_data")
                 let mut line = [0u8; 4097];
                 loop {
                     let fgets_result = unsafe {
@@ -110,7 +113,6 @@ impl UserEventsDataFile {
                         )
                     };
                     if fgets_result.is_null() {
-                        new_file_or_error = -linux::ENOTSUP;
                         break;
                     }
 
@@ -156,40 +158,50 @@ impl UserEventsDataFile {
 
                     let path_suffix: &[u8]; // Includes NUL
                     let fs = &line[fs_begin..fs_end];
+                    let keep_looking;
                     if fs == b"tracefs" {
                         // "tracefsMountPoint/user_events_data"
                         path_suffix = b"/user_events_data\0";
-                    } else if fs == b"debugfs" {
+                        keep_looking = false; // prefer "tracefs" over "debugfs"
+                    } else if path[0] == 0 && fs == b"debugfs" {
                         // "debugfsMountPoint/tracing/user_events_data"
                         path_suffix = b"/tracing/user_events_data\0";
+                        keep_looking = true; // prefer "tracefs" over "debugfs"
                     } else {
                         continue;
                     }
 
                     let mount_len = mount_end - mount_begin;
                     let path_len = mount_len + path_suffix.len(); // Includes NUL
-                    if path_len > line.len() {
+                    if path_len > path.len() {
                         continue;
                     }
 
                     // path = mountpoint + suffix
-                    line.copy_within(mount_begin..mount_end, 0);
-                    line[mount_len..path_len].copy_from_slice(path_suffix); // Includes NUL
+                    path[0..mount_len].copy_from_slice(&line[mount_begin..mount_end]);
+                    path[mount_len..path_len].copy_from_slice(path_suffix); // Includes NUL
 
-                    // line is now something like "/sys/kernel/tracing/user_events_data\0" or
-                    // "/sys/kernel/debug/tracing/user_events_data\0".
-                    clear_errno();
-                    let new_file =
-                        unsafe { linux::open(line.as_ptr().cast::<ffi::c_char>(), linux::O_RDWR) };
-                    if 0 > new_file {
-                        new_file_or_error = -get_failure_errno();
-                    } else {
-                        new_file_or_error = new_file;
+                    if !keep_looking {
+                        break;
                     }
-                    break;
                 }
 
                 unsafe { linux::fclose(mounts_file) };
+
+                if path[0] == 0 {
+                    new_file_or_error = -linux::ENOTSUP;
+                } else {
+                    // path is now something like "/sys/kernel/tracing/user_events_data\0" or
+                    // "/sys/kernel/debug/tracing/user_events_data\0".
+                    clear_errno();
+                    let new_file =
+                        unsafe { linux::open(path.as_ptr().cast::<ffi::c_char>(), linux::O_RDWR) };
+                    new_file_or_error = if 0 > new_file {
+                        -get_failure_errno()
+                    } else {
+                        new_file
+                    };
+                }
             }
         }
 

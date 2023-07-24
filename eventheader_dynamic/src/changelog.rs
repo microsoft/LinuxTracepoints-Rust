@@ -3,8 +3,14 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
+/// # v0.3.2 (2023-07-24)
+/// - Prefer "tracefs" over "debugfs" when searching for `user_events_data`.
+///   (Old behavior: no preference - use whichever comes first in mount list.)
+pub mod v0_3_2 {}
+
 /// # v0.3.1 (2023-07-12)
 /// - Use `c_char` instead of `i8` for ffi strings.
+pub mod v0_3_1 {}
 
 /// # v0.3.0 (2023-06-29)
 /// - If no consumers have enabled a tracepoint, the kernel now returns
