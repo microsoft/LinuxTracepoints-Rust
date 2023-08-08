@@ -127,6 +127,30 @@ fn builder() {
         .add_value("A", 65u8, FieldFormat::String8, 0)
         .write(&es_l5k1, None, None);
 
+    let vals = [1, 2, 3];
+    b.reset("bookmarks", 0);
+    if !vals.is_empty() {
+        let mut struct1_count = 0;
+        let mut struct1_bookmark = 0;
+        b.add_struct_with_bookmark("struct1", 1, 0, &mut struct1_bookmark);
+        for val in vals {
+            b.add_value("val", val, FieldFormat::Default, 0);
+            struct1_count += 1;
+        }
+        b.set_struct_field_count(struct1_bookmark, struct1_count);
+    }
+    if !vals.is_empty() {
+        let mut struct2_count = 0;
+        let mut struct2_bookmark = 0;
+        b.add_struct_with_bookmark("struct2", 1, 123, &mut struct2_bookmark);
+        for val in vals {
+            b.add_value("val", val, FieldFormat::Default, 0);
+            struct2_count += 1;
+        }
+        b.set_struct_field_count(struct2_bookmark, struct2_count);
+    }
+    b.write(&es_l5k1, None, None);
+
     validate(
         &p,
         &mut b,

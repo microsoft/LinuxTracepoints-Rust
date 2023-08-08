@@ -1,1 +1,3 @@
 * text=auto
+*.rs   text
+*.toml text
