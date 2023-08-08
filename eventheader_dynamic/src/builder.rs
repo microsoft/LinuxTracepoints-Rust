@@ -321,6 +321,115 @@ impl EventBuilder {
         );
     }
 
+    /// Advanced: Adds a field containing the specified number of sub-fields, returning
+    /// a bookmark that can be used for a subsequent call to
+    /// [`EventBuilder::set_struct_field_count`]. This can be used for cases where you do
+    /// not yet know the actual number of fields that will be in the struct.
+    ///
+    /// - `field_name` should be a short and distinct string that describes the field.
+    ///
+    /// - `initial_struct_field_count` specifies your initial guess for the number of
+    ///   subsequent fields that will be considered to be part of this struct field.
+    ///   This must be in the range 1 to 127. Empty structs (structs that contain no
+    ///   fields) are not permitted.
+    ///
+    /// - `field_tag` is a 16-bit integer that will be recorded in the field and can be
+    ///   used for any provider-defined purpose. Use 0 if you are not using field tags.
+    ///
+    /// - `field_count_bookmark` receives a bookmark that can later be used in a call to
+    ///   [`EventBuilder::set_struct_field_count`].
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// // Assume some dynamic number of fields that can be enumerated but where we can't
+    /// // determine ahead of time how many fields there will be, i.e. where the
+    /// // collection of fields has `field_vals.is_empty()` and `field_vals.into_iter()`
+    /// // methods but does not have a `field_vals.len()` method.
+    /// let field_vals = [1, 2, 3];
+    ///
+    /// use eventheader_dynamic as ehd;
+    /// let mut builder = ehd::EventBuilder::new();
+    /// builder.reset("EventWithStruct", 0);
+    ///
+    /// // Structs with 0 fields are not allowed, so don't create a struct if field_vals is empty.
+    /// if !field_vals.is_empty() {
+    ///     let mut struct1_count = 0;
+    ///     let mut struct1_bookmark = 0;
+    ///
+    ///     // Add the struct, tentatively set to 1 sub-field.
+    ///     builder.add_struct_with_bookmark("struct1", 1, 0, &mut struct1_bookmark);
+    ///     for val in field_vals {
+    ///         builder.add_value("val", val, ehd::FieldFormat::Default, 0);
+    ///         struct1_count += 1;
+    ///     }
+    ///
+    ///     // Update the struct to set the actual number of sub-fields.
+    ///     builder.set_struct_field_count(struct1_bookmark, struct1_count);
+    /// }
+    /// ```
+    pub fn add_struct_with_bookmark(
+        &mut self,
+        field_name: &str,
+        initial_struct_field_count: u8,
+        field_tag: u16,
+        field_count_bookmark: &mut usize,
+    ) -> &mut Self {
+        let masked_field_count = initial_struct_field_count & FieldFormat::ValueMask;
+        debug_assert_eq!(
+            masked_field_count, initial_struct_field_count,
+            "initial_struct_field_count must be less than 128"
+        );
+        assert!(
+            masked_field_count != 0,
+            "initial_struct_field_count must not be 0"
+        );
+        self.raw_add_meta(
+            field_name,
+            FieldEncoding::Struct.as_int(),
+            masked_field_count,
+            field_tag,
+        );
+
+        *field_count_bookmark = if field_tag == 0 {
+            self.meta.len() - 1
+        } else {
+            self.meta.len() - 3
+        };
+        return self;
+    }
+
+    /// Advanced: Changes the number of sub-fields in a struct, using a bookmark
+    /// returned by [`EventBuilder::add_struct_with_bookmark`]. This can be used when you
+    /// do not know the number of fields for a struct when the struct begins, but you
+    /// determine the number of fields later.
+    ///
+    /// - `field_count_bookmark` is the value received from the call to
+    ///   [`EventBuilder::add_struct_with_bookmark`] for the struct that you are
+    ///   updating.
+    ///
+    /// - `updated_struct_field_count` is the new value to use for the struct's field
+    ///   count. This must be in the range 1 to 127. Empty structs (structs that contain
+    ///   no fields) are not permitted.
+    pub fn set_struct_field_count(
+        &mut self,
+        field_count_bookmark: usize,
+        updated_struct_field_count: u8,
+    ) -> &mut Self {
+        let masked_field_count = updated_struct_field_count & FieldFormat::ValueMask;
+        debug_assert_eq!(
+            masked_field_count, updated_struct_field_count,
+            "updated_struct_field_count must be less than 128"
+        );
+        assert!(
+            masked_field_count != 0,
+            "updated_struct_field_count must not be 0"
+        );
+        self.meta[field_count_bookmark] =
+            (self.meta[field_count_bookmark] & 0x80) | masked_field_count;
+        return self;
+    }
+
     /// Adds a field containing a simple value.
     ///
     /// - `field_name` should be a short and distinct string that describes the field.
