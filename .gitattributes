@@ -1,1 +1,5 @@
 * text=auto
+*.rs   text
+*.toml text
+*.md   text
+*.yml  text
