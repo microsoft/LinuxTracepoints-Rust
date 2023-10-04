@@ -3,6 +3,15 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
+/// # v0.3.4 (TBD)
+/// - Changed procedure for locating the `user_events_data` file.
+///   - Old: parse `/proc/mounts` to determine the `tracefs` or `debugfs` mount
+///     point, then use that as the root for the `user_events_data` path.
+///   - New: try `/sys/kernel/tracing/user_events_data`, then try
+///     `/sys/kernel/debug/tracing/user_events_data`, and then parse `/proc/mounts`
+///     (i.e. only parse `/proc/mounts` if the absolute paths don't exist)
+pub mod v0_3_4 {}
+
 /// # v0.3.3 (2023-08-08)
 /// - Add [`EventBuilder::add_struct_with_bookmark`] and
 ///   [`EventBuilder::set_struct_field_count`] methods to support cases where the number

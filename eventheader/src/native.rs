@@ -39,6 +39,13 @@ fn clear_errno() {
     unsafe { *linux::__errno_location() = 0 };
 }
 
+/// linux::open(path0, O_RDWR)
+#[cfg(all(target_os = "linux", feature = "user_events"))]
+fn open_rdwr(path0: &[u8]) -> ffi::c_int {
+    assert!(path0.ends_with(&[0]));
+    return unsafe { linux::open(path0.as_ptr().cast::<ffi::c_char>(), linux::O_RDWR) };
+}
+
 /// Copies the specified value to the specified location.
 /// Returns the pointer after the end of the copy.
 ///
@@ -89,118 +96,125 @@ impl UserEventsDataFile {
         {
             // Need to find the ".../tracing/user_events_data" file in tracefs or debugfs.
 
-            // Determine tracefs/debugfs mount point by parsing "/proc/mounts".
-            // Prefer "tracefs" over "debugfs": if we find a debugfs, save the path but
-            // keep looking in case we find a tracefs later.
-            clear_errno();
-            let mounts_file = unsafe {
-                linux::fopen(
-                    "/proc/mounts\0".as_ptr().cast::<ffi::c_char>(),
-                    "r\0".as_ptr().cast::<ffi::c_char>(),
-                )
-            };
-            if mounts_file.is_null() {
-                new_file_or_error = -get_failure_errno();
+            // First, try the normal tracefs/debugfs mount points.
+            if let new_file @ 0.. = open_rdwr(b"/sys/kernel/tracing/user_events_data\0") {
+                new_file_or_error = new_file;
+            } else if let new_file @ 0.. =
+                open_rdwr(b"/sys/kernel/debug/tracing/user_events_data\0")
+            {
+                new_file_or_error = new_file;
             } else {
-                let mut path = [0u8; 274]; // 256 + sizeof("/user_events_data")
-                let mut line = [0u8; 4097];
-                loop {
-                    let fgets_result = unsafe {
-                        linux::fgets(
-                            line.as_mut_ptr().cast::<ffi::c_char>(),
-                            line.len() as ffi::c_int,
-                            mounts_file,
-                        )
-                    };
-                    if fgets_result.is_null() {
-                        break;
-                    }
-
-                    // line is "device_name mount_point file_system other_stuff..."
-
-                    let mut line_pos = 0;
-
-                    // device_name
-                    while Self::is_nonspace_char(line[line_pos]) {
-                        line_pos += 1;
-                    }
-
-                    // whitespace
-                    while Self::is_space_char(line[line_pos]) {
-                        line_pos += 1;
-                    }
-
-                    // mount_point
-                    let mount_begin = line_pos;
-                    while Self::is_nonspace_char(line[line_pos]) {
-                        line_pos += 1;
-                    }
-
-                    let mount_end = line_pos;
-
-                    // whitespace
-                    while Self::is_space_char(line[line_pos]) {
-                        line_pos += 1;
-                    }
-
-                    // file_system
-                    let fs_begin = line_pos;
-                    while Self::is_nonspace_char(line[line_pos]) {
-                        line_pos += 1;
-                    }
-
-                    let fs_end = line_pos;
-
-                    if !Self::is_space_char(line[line_pos]) {
-                        // Ignore line if no whitespace after file_system.
-                        continue;
-                    }
-
-                    let path_suffix: &[u8]; // Includes NUL
-                    let fs = &line[fs_begin..fs_end];
-                    let keep_looking;
-                    if fs == b"tracefs" {
-                        // "tracefsMountPoint/user_events_data"
-                        path_suffix = b"/user_events_data\0";
-                        keep_looking = false; // prefer "tracefs" over "debugfs"
-                    } else if path[0] == 0 && fs == b"debugfs" {
-                        // "debugfsMountPoint/tracing/user_events_data"
-                        path_suffix = b"/tracing/user_events_data\0";
-                        keep_looking = true; // prefer "tracefs" over "debugfs"
-                    } else {
-                        continue;
-                    }
-
-                    let mount_len = mount_end - mount_begin;
-                    let path_len = mount_len + path_suffix.len(); // Includes NUL
-                    if path_len > path.len() {
-                        continue;
-                    }
-
-                    // path = mountpoint + suffix
-                    path[0..mount_len].copy_from_slice(&line[mount_begin..mount_end]);
-                    path[mount_len..path_len].copy_from_slice(path_suffix); // Includes NUL
-
-                    if !keep_looking {
-                        break;
-                    }
-                }
-
-                unsafe { linux::fclose(mounts_file) };
-
-                if path[0] == 0 {
-                    new_file_or_error = -linux::ENOTSUP;
+                // Determine tracefs/debugfs mount point by parsing "/proc/mounts".
+                // Prefer "tracefs" over "debugfs": if we find a debugfs, save the path but
+                // keep looking in case we find a tracefs later.
+                clear_errno();
+                let mounts_file = unsafe {
+                    linux::fopen(
+                        "/proc/mounts\0".as_ptr().cast::<ffi::c_char>(),
+                        "r\0".as_ptr().cast::<ffi::c_char>(),
+                    )
+                };
+                if mounts_file.is_null() {
+                    new_file_or_error = -get_failure_errno();
                 } else {
-                    // path is now something like "/sys/kernel/tracing/user_events_data\0" or
-                    // "/sys/kernel/debug/tracing/user_events_data\0".
-                    clear_errno();
-                    let new_file =
-                        unsafe { linux::open(path.as_ptr().cast::<ffi::c_char>(), linux::O_RDWR) };
-                    new_file_or_error = if 0 > new_file {
-                        -get_failure_errno()
+                    let mut path = [0u8; 274]; // 256 + sizeof("/user_events_data")
+                    let mut line = [0u8; 4097];
+                    loop {
+                        let fgets_result = unsafe {
+                            linux::fgets(
+                                line.as_mut_ptr().cast::<ffi::c_char>(),
+                                line.len() as ffi::c_int,
+                                mounts_file,
+                            )
+                        };
+                        if fgets_result.is_null() {
+                            break;
+                        }
+
+                        // line is "device_name mount_point file_system other_stuff..."
+
+                        let mut line_pos = 0;
+
+                        // device_name
+                        while Self::is_nonspace_char(line[line_pos]) {
+                            line_pos += 1;
+                        }
+
+                        // whitespace
+                        while Self::is_space_char(line[line_pos]) {
+                            line_pos += 1;
+                        }
+
+                        // mount_point
+                        let mount_begin = line_pos;
+                        while Self::is_nonspace_char(line[line_pos]) {
+                            line_pos += 1;
+                        }
+
+                        let mount_end = line_pos;
+
+                        // whitespace
+                        while Self::is_space_char(line[line_pos]) {
+                            line_pos += 1;
+                        }
+
+                        // file_system
+                        let fs_begin = line_pos;
+                        while Self::is_nonspace_char(line[line_pos]) {
+                            line_pos += 1;
+                        }
+
+                        let fs_end = line_pos;
+
+                        if !Self::is_space_char(line[line_pos]) {
+                            // Ignore line if no whitespace after file_system.
+                            continue;
+                        }
+
+                        let path_suffix: &[u8]; // Includes NUL
+                        let fs = &line[fs_begin..fs_end];
+                        let keep_looking;
+                        if fs == b"tracefs" {
+                            // "tracefsMountPoint/user_events_data"
+                            path_suffix = b"/user_events_data\0";
+                            keep_looking = false; // prefer "tracefs" over "debugfs"
+                        } else if path[0] == 0 && fs == b"debugfs" {
+                            // "debugfsMountPoint/tracing/user_events_data"
+                            path_suffix = b"/tracing/user_events_data\0";
+                            keep_looking = true; // prefer "tracefs" over "debugfs"
+                        } else {
+                            continue;
+                        }
+
+                        let mount_len = mount_end - mount_begin;
+                        let path_len = mount_len + path_suffix.len(); // Includes NUL
+                        if path_len > path.len() {
+                            continue;
+                        }
+
+                        // path = mountpoint + suffix
+                        path[0..mount_len].copy_from_slice(&line[mount_begin..mount_end]);
+                        path[mount_len..path_len].copy_from_slice(path_suffix); // Includes NUL
+
+                        if !keep_looking {
+                            break;
+                        }
+                    }
+
+                    unsafe { linux::fclose(mounts_file) };
+
+                    if path[0] == 0 {
+                        new_file_or_error = -linux::ENOTSUP;
                     } else {
-                        new_file
-                    };
+                        // path is now something like "/sys/kernel/tracing/user_events_data\0" or
+                        // "/sys/kernel/debug/tracing/user_events_data\0".
+                        clear_errno();
+                        new_file_or_error = if let new_file @ 0.. = open_rdwr(&path) {
+                            new_file
+                        } else {
+                            -get_failure_errno()
+                        };
+                    }
                 }
             }
         }
