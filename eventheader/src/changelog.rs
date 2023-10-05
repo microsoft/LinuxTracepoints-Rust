@@ -3,6 +3,16 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
+/// # v0.3.4 (TBD)
+/// - Changed procedure for locating the `user_events_data` file.
+///   - Old: parse `/proc/mounts` to determine the `tracefs` or `debugfs` mount
+///     point, then use that as the root for the `user_events_data` path.
+///   - New: try `/sys/kernel/tracing/user_events_data`; if that doesn't exist,
+///     parse `/proc/mounts` to find the `tracefs` or `debugfs` mount point.
+///   - Rationale: Probe an absolute path so that containers don't have to
+///     create a fake `/proc/mounts` and for efficiency.
+pub mod v0_3_4 {}
+
 /// # v0.3.2 (2023-07-24)
 /// - Prefer "tracefs" over "debugfs" when searching for `user_events_data`.
 ///   (Old behavior: no preference - use whichever comes first in mount list.)
