@@ -94,13 +94,15 @@ impl UserEventsDataFile {
         }
         #[cfg(all(target_os = "linux", feature = "user_events"))]
         {
-            // Need to find the ".../tracing/user_events_data" file in tracefs.
+            // Need to find the ".../tracing/user_events_data" file in tracefs or debugfs.
 
             // First, try the usual tracefs mount point.
             if let new_file @ 0.. = open_rdwr(b"/sys/kernel/tracing/user_events_data\0") {
                 new_file_or_error = new_file;
             } else {
-                // Determine tracefs mount point by parsing "/proc/mounts".
+                // Determine tracefs/debugfs mount point by parsing "/proc/mounts".
+                // Prefer "tracefs" over "debugfs": if we find a debugfs, save the path but
+                // keep looking in case we find a tracefs later.
                 clear_errno();
                 let mounts_file = unsafe {
                     linux::fopen(
@@ -165,23 +167,34 @@ impl UserEventsDataFile {
                             continue;
                         }
 
+                        let path_suffix: &[u8]; // Includes NUL
                         let fs = &line[fs_begin..fs_end];
-                        if fs != b"tracefs" {
+                        let keep_looking;
+                        if fs == b"tracefs" {
+                            // "tracefsMountPoint/user_events_data"
+                            path_suffix = b"/user_events_data\0";
+                            keep_looking = false; // prefer "tracefs" over "debugfs"
+                        } else if path[0] == 0 && fs == b"debugfs" {
+                            // "debugfsMountPoint/tracing/user_events_data"
+                            path_suffix = b"/tracing/user_events_data\0";
+                            keep_looking = true; // prefer "tracefs" over "debugfs"
+                        } else {
                             continue;
                         }
 
-                        const PATH_SUFFIX: &[u8] = b"/user_events_data\0"; // Includes NUL
                         let mount_len = mount_end - mount_begin;
-                        let path_len = mount_len + PATH_SUFFIX.len(); // Includes NUL
+                        let path_len = mount_len + path_suffix.len(); // Includes NUL
                         if path_len > path.len() {
                             continue;
                         }
 
                         // path = mountpoint + suffix
                         path[0..mount_len].copy_from_slice(&line[mount_begin..mount_end]);
-                        path[mount_len..path_len].copy_from_slice(PATH_SUFFIX); // Includes NUL
+                        path[mount_len..path_len].copy_from_slice(path_suffix); // Includes NUL
 
-                        break;
+                        if !keep_looking {
+                            break;
+                        }
                     }
 
                     unsafe { linux::fclose(mounts_file) };
