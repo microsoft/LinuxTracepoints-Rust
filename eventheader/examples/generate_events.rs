@@ -26,9 +26,8 @@ tlg::define_provider!(
 );
 
 fn main() {
-    unsafe {
-        PROV1.register();
-    }
+    let register_errno = unsafe { PROV1.register() };
+    println!("PROV1.register() = {}", register_errno);
 
     let guid1 = tlg::Guid::from_name("H1");
     let guid2 = tlg::Guid::from_name("H2");
