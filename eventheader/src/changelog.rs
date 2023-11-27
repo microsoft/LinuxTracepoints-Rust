@@ -3,7 +3,7 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
-/// # v0.3.4 (TBD)
+/// # v0.3.4 (2023-11-27)
 /// - Changed procedure for locating the `user_events_data` file.
 ///   - Old: parse `/proc/mounts` to determine the `tracefs` or `debugfs` mount
 ///     point, then use that as the root for the `user_events_data` path.
