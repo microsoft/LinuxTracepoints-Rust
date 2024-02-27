@@ -39,11 +39,11 @@ fn clear_errno() {
     unsafe { *linux::__errno_location() = 0 };
 }
 
-/// linux::open(path0, O_RDWR)
+/// linux::open(path0, O_WRONLY)
 #[cfg(all(target_os = "linux", feature = "user_events"))]
-fn open_rdwr(path0: &[u8]) -> ffi::c_int {
+fn open_wronly(path0: &[u8]) -> ffi::c_int {
     assert!(path0.ends_with(&[0]));
-    return unsafe { linux::open(path0.as_ptr().cast::<ffi::c_char>(), linux::O_RDWR) };
+    return unsafe { linux::open(path0.as_ptr().cast::<ffi::c_char>(), linux::O_WRONLY) };
 }
 
 /// Copies the specified value to the specified location.
@@ -97,7 +97,7 @@ impl UserEventsDataFile {
             // Need to find the ".../tracing/user_events_data" file in tracefs or debugfs.
 
             // First, try the usual tracefs mount point.
-            if let new_file @ 0.. = open_rdwr(b"/sys/kernel/tracing/user_events_data\0") {
+            if let new_file @ 0.. = open_wronly(b"/sys/kernel/tracing/user_events_data\0") {
                 new_file_or_error = new_file;
             } else {
                 // Determine tracefs/debugfs mount point by parsing "/proc/mounts".
@@ -205,7 +205,7 @@ impl UserEventsDataFile {
                         // path is now something like "/sys/kernel/tracing/user_events_data\0" or
                         // "/sys/kernel/debug/tracing/user_events_data\0".
                         clear_errno();
-                        new_file_or_error = if let new_file @ 0.. = open_rdwr(&path) {
+                        new_file_or_error = if let new_file @ 0.. = open_wronly(&path) {
                             new_file
                         } else {
                             -get_failure_errno()

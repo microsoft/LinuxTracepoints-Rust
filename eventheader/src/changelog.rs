@@ -3,6 +3,10 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
+/// # v0.3.5 (2023-02-27)
+/// - Open `user_events_data` for WRONLY instead of RDWR.
+pub mod v0_3_5 {}
+
 /// # v0.3.4 (2023-11-27)
 /// - Changed procedure for locating the `user_events_data` file.
 ///   - Old: parse `/proc/mounts` to determine the `tracefs` or `debugfs` mount
