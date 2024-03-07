@@ -8,6 +8,7 @@ use core::ptr::copy_nonoverlapping;
 use eventheader::FieldEncoding;
 use eventheader::FieldFormat;
 use eventheader::Opcode;
+use eventheader::_internal;
 use eventheader::_internal::EventDataDescriptor;
 use eventheader::_internal::EventHeader;
 use eventheader::_internal::HeaderFlags;
@@ -226,7 +227,8 @@ impl EventBuilder {
         return if self.meta.len() + self.data.len() > 65535 - (52 + 16) {
             34 // libc::ERANGE
         } else {
-            event_set.state().write_eventheader(
+            _internal::write_eventheader(
+                event_set.state(),
                 &EventHeader {
                     flags: self.flags,
                     version: self.version,

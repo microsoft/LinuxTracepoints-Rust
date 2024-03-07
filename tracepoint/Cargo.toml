@@ -1,13 +1,12 @@
 [package]
-name = "eventheader_dynamic"
+name = "tracepoint"
 version = "0.4.0"
 edition = "2021"
 authors = ["Microsoft"]
 license = "MIT"
-description = "Rust API for runtime-specified eventheader-encoded Linux Tracepoints via user_events"
+description = "Rust API for Linux Tracepoints via user_events"
 keywords = [
     "user_events",
-    "eventheader",
     "tracepoints",
     "trace",
     "logging",
@@ -25,10 +24,7 @@ rust-version = "1.63"
 
 [features]
 default = ["user_events"]
-user_events = ["eventheader/user_events"] # Logging is enabled if Linux && user_events.
+user_events = [] # Logging is enabled if linux && user_events.
 
-[dependencies]
-eventheader = { default-features = false, version = "= 0.4.0", path = "../eventheader" }
-
-[dev-dependencies]
-uuid  = ">= 1.1"
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { default-features = false, version = "0.2" }

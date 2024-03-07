@@ -5,14 +5,19 @@
 //! Internal implementation details for eventheader macros and eventheader_dynamic.
 //! Contents subject to change without notice.
 
+use core::mem;
+use core::ptr;
 use core::time::Duration;
 
+use crate::enums::ExtensionKind;
+
+pub use tracepoint::EventDataDescriptor;
+pub use tracepoint::TracepointState;
+
 pub use crate::descriptors::slice_count;
-pub use crate::descriptors::EventDataDescriptor;
 pub use crate::descriptors::EventHeader;
 pub use crate::descriptors::EventHeaderExtension;
 pub use crate::enums::HeaderFlags;
-pub use crate::native::TracepointState;
 pub use crate::provider::provider_new;
 pub use crate::provider::CommandString;
 pub use crate::provider::EventHeaderTracepoint;
@@ -79,4 +84,108 @@ pub const fn time_from_duration_before_1970(duration: Duration) -> i64 {
         // Note: Rounding towards negative infinity.
         -(duration_secs as i64) - ((duration.subsec_nanos() != 0) as i64)
     }
+}
+
+/// Copies the specified value to the specified location.
+/// Returns the pointer after the end of the copy.
+///
+/// # Safety
+///
+/// Caller is responsible for making sure there is sufficient space in the buffer.
+unsafe fn append_bytes<T: Sized>(dst: *mut u8, src: &T) -> *mut u8 {
+    let size = mem::size_of::<T>();
+    ptr::copy_nonoverlapping(src as *const T as *const u8, dst, size);
+    return dst.add(size);
+}
+
+/// Fills in `data[0]` with the event's write_index, event_header,
+/// activity extension block (if an activity id is provided), and
+/// metadata extension block header (if meta_len != 0), then sends
+/// the event to the `user_events_data` file.
+///
+/// Requires:
+/// - `data[0].is_empty()` since it will be used for the headers.
+/// - related_id may only be present if activity_id is present.
+/// - if activity_id.is_some() || meta_len != 0 then event_header.flags
+///   must equal DefaultWithExtension.
+/// - If meta_len != 0 then `data[1]` starts with metadata extension
+///   block data.
+pub fn write_eventheader(
+    state: &TracepointState,
+    event_header: &EventHeader,
+    activity_id: Option<&[u8; 16]>,
+    related_id: Option<&[u8; 16]>,
+    meta_len: u16,
+    data: &mut [EventDataDescriptor],
+) -> i32 {
+    debug_assert!(data[0].is_empty());
+    debug_assert!(related_id.is_none() || activity_id.is_some());
+    debug_assert!(
+        (activity_id.is_none() && meta_len == 0)
+            || event_header.flags == HeaderFlags::DefaultWithExtension
+    );
+
+    let mut extension_count = (activity_id.is_some() as u8) + ((meta_len != 0) as u8);
+
+    const HEADERS_SIZE_MAX: usize = mem::size_of::<u32>() // write_index
+        + mem::size_of::<EventHeader>() // event_header
+        + mem::size_of::<EventHeaderExtension>() + 16 + 16 // activity header + activity_id + related_id
+        + mem::size_of::<EventHeaderExtension>(); // metadata header (last because data[1] has the metadata)
+    let mut headers: [u8; HEADERS_SIZE_MAX] = [0; HEADERS_SIZE_MAX];
+    let headers_len;
+    unsafe {
+        let mut headers_ptr = headers.as_mut_ptr().add(mem::size_of::<u32>()); // write_index
+        headers_ptr = append_bytes(headers_ptr, event_header);
+
+        match activity_id {
+            None => debug_assert!(related_id.is_none()),
+            Some(aid) => match related_id {
+                None => {
+                    extension_count -= 1;
+                    headers_ptr = append_bytes(
+                        headers_ptr,
+                        &EventHeaderExtension::from_parts(
+                            16,
+                            ExtensionKind::ActivityId,
+                            extension_count > 0,
+                        ),
+                    );
+                    headers_ptr = append_bytes(headers_ptr, aid);
+                }
+                Some(rid) => {
+                    extension_count -= 1;
+                    headers_ptr = append_bytes(
+                        headers_ptr,
+                        &EventHeaderExtension::from_parts(
+                            32,
+                            ExtensionKind::ActivityId,
+                            extension_count > 0,
+                        ),
+                    );
+                    headers_ptr = append_bytes(headers_ptr, aid);
+                    headers_ptr = append_bytes(headers_ptr, rid);
+                }
+            },
+        }
+
+        if meta_len != 0 {
+            extension_count -= 1;
+            headers_ptr = append_bytes(
+                headers_ptr,
+                &EventHeaderExtension::from_parts(
+                    meta_len,
+                    ExtensionKind::Metadata,
+                    extension_count > 0,
+                ),
+            );
+        }
+
+        headers_len = headers_ptr.offset_from(headers.as_mut_ptr()) as usize;
+    }
+
+    debug_assert!(headers_len <= headers.len());
+    debug_assert!(extension_count == 0);
+
+    let writev_result = state.write_with_headers(data, &mut headers[0..headers_len]);
+    return writev_result;
 }

@@ -71,9 +71,10 @@ impl EnabledGenerator {
                         self.tree2
                             .add_punct("&")
                             .push_span(provider_symbol_span)
-                            .add_ident(&String::from_iter(
-                                [PROVIDER_PTR_VAR_PREFIX, &provider_symbol_string].into_iter(),
-                            ))
+                            .add_ident(&String::from_iter([
+                                PROVIDER_PTR_VAR_PREFIX,
+                                &provider_symbol_string,
+                            ]))
                             .pop_span()
                             .drain(),
                     )
@@ -122,9 +123,10 @@ impl EnabledGenerator {
                 self.tree1
                     .add_ident("link_section")
                     .add_punct("=")
-                    .add_literal(Literal::string(&String::from_iter(
-                        [TRACEPOINTS_SECTION_PREFIX, &provider_symbol_string].into_iter(),
-                    )))
+                    .add_literal(Literal::string(&String::from_iter([
+                        TRACEPOINTS_SECTION_PREFIX,
+                        &provider_symbol_string,
+                    ])))
                     .drain(),
             )
             // static mut _EH_TRACEPOINT_PTR: *const ehi::EventHeaderTracepoint = &_EH_TRACEPOINT;

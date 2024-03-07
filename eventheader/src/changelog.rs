@@ -1,7 +1,14 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 //! Release history
 
 #[allow(unused_imports)]
 use crate::*; // For docs
+
+/// # v0.4.0 (TBD)
+/// - Move non-eventheader code into separate `tracepoint` crate.
+pub mod v0_4_0 {}
 
 /// # v0.3.5 (2023-02-27)
 /// - Open `user_events_data` for WRONLY instead of RDWR.
