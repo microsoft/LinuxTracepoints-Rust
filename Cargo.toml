@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "tracepoint",
     "eventheader",
     "eventheader_dynamic",
     "eventheader_macros",

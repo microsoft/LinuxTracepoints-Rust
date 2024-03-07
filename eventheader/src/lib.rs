@@ -1003,13 +1003,16 @@ pub use eventheader_macros::write_event;
 #[cfg(feature = "macros")]
 pub use eventheader_macros::provider_enabled;
 
+// Re-exports from tracepoint:
+pub use tracepoint::NativeImplementation;
+pub use tracepoint::NATIVE_IMPLEMENTATION;
+
+// Exports from eventheader:
 pub use enums::FieldEncoding;
 pub use enums::FieldFormat;
 pub use enums::Level;
 pub use enums::Opcode;
 pub use guid::Guid;
-pub use native::NativeImplementation;
-pub use native::NATIVE_IMPLEMENTATION;
 pub use provider::Provider;
 pub mod _internal;
 pub mod changelog;
@@ -1048,5 +1051,4 @@ macro_rules! time_from_systemtime {
 mod descriptors;
 mod enums;
 mod guid;
-mod native;
 mod provider;

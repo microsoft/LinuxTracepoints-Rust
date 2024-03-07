@@ -27,16 +27,16 @@ impl ProviderGenerator {
 
         // __start__eh_tracepoints_MY_PROVIDER
         let provider_section_start =
-            String::from_iter([TRACEPOINTS_SECTION_START_PREFIX, &provider_sym].into_iter());
+            String::from_iter([TRACEPOINTS_SECTION_START_PREFIX, &provider_sym]);
 
         // __stop__eh_tracepoints_MY_PROVIDER
         let provider_section_stop =
-            String::from_iter([TRACEPOINTS_SECTION_STOP_PREFIX, &provider_sym].into_iter());
+            String::from_iter([TRACEPOINTS_SECTION_STOP_PREFIX, &provider_sym]);
 
         let options = if provider.group_name.is_empty() {
             String::new()
         } else {
-            String::from_iter(["G", &provider.group_name].into_iter())
+            String::from_iter(["G", &provider.group_name])
         };
 
         let prov_tokens = self
@@ -119,9 +119,10 @@ impl ProviderGenerator {
                 self.tree1
                     .add_ident("link_section")
                     .add_punct("=")
-                    .add_literal(Literal::string(&String::from_iter(
-                        [TRACEPOINTS_SECTION_PREFIX, &provider_sym].into_iter(),
-                    )))
+                    .add_literal(Literal::string(&String::from_iter([
+                        TRACEPOINTS_SECTION_PREFIX,
+                        &provider_sym,
+                    ])))
                     .drain(),
             )
             // #[no_mangle]
@@ -130,9 +131,7 @@ impl ProviderGenerator {
             // static mut _eh_define_provider_MY_PROVIDER: *const usize = ::core::ptr::null();
             .add_ident("static")
             .add_ident("mut")
-            .add_ident(&String::from_iter(
-                [PROVIDER_PTR_VAR_PREFIX, &provider_sym].into_iter(),
-            ))
+            .add_ident(&String::from_iter([PROVIDER_PTR_VAR_PREFIX, &provider_sym]))
             .add_punct(":")
             .add_punct("*")
             .add_ident("const")

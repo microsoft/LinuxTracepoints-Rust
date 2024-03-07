@@ -1,6 +1,6 @@
 [package]
 name = "eventheader"
-version = "0.3.5"
+version = "0.4.0"
 edition = "2021"
 authors = ["Microsoft"]
 license = "MIT"
@@ -25,14 +25,12 @@ rust-version = "1.63"
 
 [features]
 default = ["user_events", "macros"]
-user_events = [] # Logging is enabled if linux && user_events.
+user_events = ["tracepoint/user_events"] # Logging is enabled if linux && user_events.
 macros = ["dep:eventheader_macros"]
 
 [dependencies]
+tracepoint = { default-features = false, version = "= 0.4.0", path = "../tracepoint" }
 eventheader_macros = { optional = true, version = "= 0.3.0", path = "../eventheader_macros" }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = { default-features = false, version = "0.2" }
 
 [dev-dependencies]
 uuid  = ">= 1.1"

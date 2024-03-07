@@ -218,24 +218,18 @@ impl Tree {
         return self
             // #[cfg(target_os = "linux")]
             .add_punct("#")
-            .add_group_square(
-                [
-                    Ident::new("cfg", span).into(),
-                    Group::new(
-                        Delimiter::Parenthesis,
-                        TokenStream::from_iter(
-                            [
-                                TokenTree::from(Ident::new("target_os", span)),
-                                TokenTree::from(Punct::new('=', Spacing::Alone)),
-                                TokenTree::from(Literal::string("linux")),
-                            ]
-                            .into_iter(),
-                        ),
-                    )
-                    .into(),
-                ]
-                .into_iter(),
-            );
+            .add_group_square([
+                Ident::new("cfg", span).into(),
+                Group::new(
+                    Delimiter::Parenthesis,
+                    TokenStream::from_iter([
+                        TokenTree::from(Ident::new("target_os", span)),
+                        TokenTree::from(Punct::new('=', Spacing::Alone)),
+                        TokenTree::from(Literal::string("linux")),
+                    ]),
+                )
+                .into(),
+            ]);
     }
 
     pub fn add_cfg_not_linux(&mut self) -> &mut Self {
@@ -243,33 +237,24 @@ impl Tree {
         return self
             // #[cfg(not(target_os = "linux"))]
             .add_punct("#")
-            .add_group_square(
-                [
-                    Ident::new("cfg", span).into(),
-                    Group::new(
-                        Delimiter::Parenthesis,
-                        TokenStream::from_iter(
-                            [
-                                TokenTree::from(Ident::new("not", span)),
-                                Group::new(
-                                    Delimiter::Parenthesis,
-                                    TokenStream::from_iter(
-                                        [
-                                            TokenTree::from(Ident::new("target_os", span)),
-                                            TokenTree::from(Punct::new('=', Spacing::Alone)),
-                                            TokenTree::from(Literal::string("linux")),
-                                        ]
-                                        .into_iter(),
-                                    ),
-                                )
-                                .into(),
-                            ]
-                            .into_iter(),
-                        ),
-                    )
-                    .into(),
-                ]
-                .into_iter(),
-            );
+            .add_group_square([
+                Ident::new("cfg", span).into(),
+                Group::new(
+                    Delimiter::Parenthesis,
+                    TokenStream::from_iter([
+                        TokenTree::from(Ident::new("not", span)),
+                        Group::new(
+                            Delimiter::Parenthesis,
+                            TokenStream::from_iter([
+                                TokenTree::from(Ident::new("target_os", span)),
+                                TokenTree::from(Punct::new('=', Spacing::Alone)),
+                                TokenTree::from(Literal::string("linux")),
+                            ]),
+                        )
+                        .into(),
+                    ]),
+                )
+                .into(),
+            ]);
     }
 }

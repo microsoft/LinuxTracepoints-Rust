@@ -5,16 +5,11 @@ use core::ffi;
 use core::marker;
 use core::mem::size_of;
 use core::pin::Pin;
-use core::ptr;
 use core::sync::atomic::AtomicI32;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 
 use crate::descriptors::EventDataDescriptor;
-use crate::descriptors::EventHeader;
-use crate::descriptors::EventHeaderExtension;
-use crate::enums::ExtensionKind;
-use crate::enums::HeaderFlags;
 
 #[cfg(all(target_os = "linux", feature = "user_events"))]
 use libc as linux;
@@ -44,18 +39,6 @@ fn clear_errno() {
 fn open_wronly(path0: &[u8]) -> ffi::c_int {
     assert!(path0.ends_with(&[0]));
     return unsafe { linux::open(path0.as_ptr().cast::<ffi::c_char>(), linux::O_WRONLY) };
-}
-
-/// Copies the specified value to the specified location.
-/// Returns the pointer after the end of the copy.
-///
-/// # Safety
-///
-/// Caller is responsible for making sure there is sufficient space in the buffer.
-unsafe fn append_bytes<T: Sized>(dst: *mut u8, src: &T) -> *mut u8 {
-    let size = size_of::<T>();
-    ptr::copy_nonoverlapping(src as *const T as *const u8, dst, size);
-    return dst.add(size);
 }
 
 struct UserEventsDataFile {
@@ -293,9 +276,9 @@ impl Drop for UserEventsDataFile {
     }
 }
 
-/// Represents a tracepoint registration.
+/// Low-level API: Represents a tracepoint registration.
 pub struct TracepointState {
-    /// The kernel will update this variable with tracepoint state.
+    /// The kernel will update this variable with tracepoint enable/disable state.
     /// It will be 0 if tracepoint is disabled, nonzero if tracepoint is enabled.
     enable_status: AtomicU32,
 
@@ -344,6 +327,9 @@ impl TracepointState {
     }
 
     /// Creates a new unregistered tracepoint.
+    ///
+    /// initial_enable_status is normally 0, since an unregistered tracepoint will
+    /// normally be considered disabled.
     pub const fn new(initial_enable_status: u32) -> Self {
         return Self {
             enable_status: AtomicU32::new(initial_enable_status),
@@ -352,13 +338,17 @@ impl TracepointState {
         };
     }
 
-    /// Returns true if this tracepoint is registered and enabled.
+    /// Returns true if this tracepoint is enabled, i.e. `enable_status != 0`.
     #[inline(always)]
     pub fn enabled(&self) -> bool {
         return 0 != self.enable_status.load(Ordering::Relaxed);
     }
 
     /// Unregisters this tracepoint.
+    ///
+    /// Returns 0 for success, error code (e.g. EBUSY, EALREADY) for error.
+    /// Error code is usually ignored in retail code, but may be helpful during
+    /// development to understand behavior or track down issues.
     pub fn unregister(&self) -> i32 {
         let error;
 
@@ -382,6 +372,7 @@ impl TracepointState {
                 #[cfg(all(target_os = "linux", feature = "user_events"))]
                 {
                     #[repr(C, packed)]
+                    #[allow(non_camel_case_types)]
                     struct user_unreg {
                         size: u32,
                         disable_bit: u8,
@@ -421,15 +412,58 @@ impl TracepointState {
 
     /// Registers this tracepoint.
     ///
-    /// Requires: this tracepoint is not currently registered.
+    /// Requires: this `TracepointState` is not currently registered.
+    ///
+    /// Returns 0 for success, error code (e.g. EACCES, ENOENT) for error. The error code
+    /// is usually ignored in retail scenarios but may be helpful during development to
+    /// understand behavior or track down issues.
+    ///
+    /// `_name_args` is the tracepoint definition in the format
+    /// `Name[ FieldDef1[;FieldDef2...]]`. For example:
+    ///
+    /// - `MyTracepoint1`
+    /// - `MyTracepoint2 u32 Field1`
+    /// - `MyTracepoint3 u32 Field1;char Field2[20]`
     ///
     /// # Safety
     ///
-    /// The tracepoint must be unregistered before it is deallocated. Note that it will
-    /// unregister itself when dropped, so this is only an issue if the tracepoint is
-    /// not dropped before it is deallocated, as might happen for a static variable in a
-    /// shared library that gets unloaded.
+    /// The tracepoint must be unregistered before it is deallocated. `TracepointState`
+    /// will unregister itself when dropped, so this is only an issue if the tracepoint
+    /// is not dropped before it is deallocated. This might happen for a static variable
+    /// in a shared library that gets unloaded.
     pub unsafe fn register(self: Pin<&Self>, _name_args: &ffi::CStr) -> i32 {
+        return self.register_with_flags(_name_args, 0);
+    }
+
+    /// Advanced: Registers this tracepoint using the specified `user_reg` flags.
+    ///
+    /// Requires: this `TracepointState` is not currently registered.
+    ///
+    /// Returns 0 for success, error code (e.g. EACCES, ENOENT) for error. The error code
+    /// is usually ignored in retail scenarios but may be helpful during development to
+    /// understand behavior or track down issues.
+    ///
+    /// `_name_args` is the tracepoint definition in the format
+    /// `Name[ FieldDef1[;FieldDef2...]]`. For example:
+    ///
+    /// - `MyTracepoint1`
+    /// - `MyTracepoint2 u32 Field1`
+    /// - `MyTracepoint3 u32 Field1;char Field2[20]`
+    ///
+    /// `_flags` is normally `0`, but may also be set to a `user_reg` flag such as
+    /// `USER_EVENT_REG_PERSIST`.
+    ///
+    /// # Safety
+    ///
+    /// The tracepoint must be unregistered before it is deallocated. `TracepointState`
+    /// will unregister itself when dropped, so this is only an issue if the tracepoint
+    /// is not dropped before it is deallocated. This might happen for a static variable
+    /// in a shared library that gets unloaded.
+    pub unsafe fn register_with_flags(
+        self: Pin<&Self>,
+        _name_args: &ffi::CStr,
+        _flags: u16,
+    ) -> i32 {
         let error;
         let new_write_index;
 
@@ -455,6 +489,7 @@ impl TracepointState {
             #[cfg(all(target_os = "linux", feature = "user_events"))]
             {
                 #[repr(C, packed)]
+                #[allow(non_camel_case_types)]
                 struct user_reg {
                     size: u32,
                     enable_bit: u8,
@@ -469,7 +504,7 @@ impl TracepointState {
                     size: size_of::<user_reg>() as u32,
                     enable_bit: 0,
                     enable_size: 4,
-                    flags: 0,
+                    flags: _flags,
                     enable_addr: &self.enable_status as *const AtomicU32 as usize as u64,
                     name_args: _name_args.as_ptr() as usize as u64,
                     write_index: 0,
@@ -495,10 +530,22 @@ impl TracepointState {
         return error;
     }
 
-    /// Fills in `data[0]` with the event's write_index, then sends to event to the
-    /// `user_events_data` file.
+    /// Generates an event.
     ///
-    /// Requires: `data[0].is_empty()` since it will be used for the headers.
+    /// Requires: `data[0].is_empty()` since it will be used for the event headers.
+    ///
+    /// Returns 0 for success, error code (e.g. EBADF) for error. The error code
+    /// is usually ignored in retail scenarios but may be helpful during development to
+    /// understand behavior or track down issues.
+    ///
+    /// If disabled or unregistered, this method does nothing and returnes EBADF.
+    /// Otherwise, sets `data[0] = write_index` then sends `data[..]` to the
+    /// `user_events_data` file handle.
+    ///
+    /// The event's payload is the concatenation of the remaining data blocks, if any
+    /// (i.e. `data[1..]`).
+    ///
+    /// The payload's layout should match the args specified in the call to `register`.
     pub fn write(&self, data: &mut [EventDataDescriptor]) -> i32 {
         debug_assert!(data[0].is_empty());
 
@@ -512,32 +559,26 @@ impl TracepointState {
         return writev_result;
     }
 
-    /// Fills in `data[0]` with the event's write_index, event_header,
-    /// activity extension block (if an activity id is provided), and
-    /// metadata extension block header (if meta_len != 0), then sends
-    /// the event to the `user_events_data` file.
+    /// Generates an event with headers.
     ///
-    /// Requires:
-    /// - `data[0].is_empty()` since it will be used for the headers.
-    /// - related_id may only be present if activity_id is present.
-    /// - if activity_id.is_some() || meta_len != 0 then event_header.flags
-    ///   must equal DefaultWithExtension.
-    /// - If meta_len != 0 then `data[1]` starts with metadata extension
-    ///   block data.
-    pub fn write_eventheader(
-        &self,
-        event_header: &EventHeader,
-        activity_id: Option<&[u8; 16]>,
-        related_id: Option<&[u8; 16]>,
-        meta_len: u16,
-        data: &mut [EventDataDescriptor],
-    ) -> i32 {
+    /// Requires: `data[0].is_empty()` since it will be used for the event headers;
+    /// `headers.len() >= 4` since it will be used for `write_index`.
+    ///
+    /// Returns 0 for success, error code (e.g. EBADF) for error. The error code
+    /// is usually ignored in retail scenarios but may be helpful during development to
+    /// understand behavior or track down issues.
+    ///
+    /// If disabled or unregistered, this method does nothing and returnes EBADF.
+    /// Otherwise, sets `data[0] = headers` and `headers[0..4] = write_index`, then sends
+    /// `data[..]` to the `user_events_data` file.
+    ///
+    /// The event's payload is the concatenation of the remaining data blocks, if any
+    /// (i.e. `data[1..]`).
+    ///
+    /// The payload's layout should match the args specified in the call to `register`.
+    pub fn write_with_headers(&self, data: &mut [EventDataDescriptor], headers: &mut [u8]) -> i32 {
         debug_assert!(data[0].is_empty());
-        debug_assert!(related_id.is_none() || activity_id.is_some());
-        debug_assert!(
-            (activity_id.is_none() && meta_len == 0)
-                || event_header.flags == HeaderFlags::DefaultWithExtension
-        );
+        debug_assert!(headers.len() >= 4);
 
         let enable_status = self.enable_status.load(Ordering::Relaxed);
         let write_index = self.write_index.load(Ordering::Relaxed);
@@ -545,69 +586,9 @@ impl TracepointState {
             return 9; // linux::EBADF
         }
 
-        let mut extension_count = (activity_id.is_some() as u8) + ((meta_len != 0) as u8);
+        *<&mut [u8; 4]>::try_from(&mut headers[0..4]).unwrap() = write_index.to_ne_bytes();
 
-        const HEADERS_SIZE_MAX: usize = size_of::<u32>() // write_index
-            + size_of::<EventHeader>() // event_header
-            + size_of::<EventHeaderExtension>() + 16 + 16 // activity header + activity_id + related_id
-            + size_of::<EventHeaderExtension>(); // metadata header (last because data[1] has the metadata)
-        let mut headers: [u8; HEADERS_SIZE_MAX] = [0; HEADERS_SIZE_MAX];
-        let headers_len;
-        unsafe {
-            let mut headers_ptr = headers.as_mut_ptr();
-            headers_ptr = append_bytes(headers_ptr, &write_index);
-            headers_ptr = append_bytes(headers_ptr, event_header);
-
-            match activity_id {
-                None => debug_assert!(related_id.is_none()),
-                Some(aid) => match related_id {
-                    None => {
-                        extension_count -= 1;
-                        headers_ptr = append_bytes(
-                            headers_ptr,
-                            &EventHeaderExtension::from_parts(
-                                16,
-                                ExtensionKind::ActivityId,
-                                extension_count > 0,
-                            ),
-                        );
-                        headers_ptr = append_bytes(headers_ptr, aid);
-                    }
-                    Some(rid) => {
-                        extension_count -= 1;
-                        headers_ptr = append_bytes(
-                            headers_ptr,
-                            &EventHeaderExtension::from_parts(
-                                32,
-                                ExtensionKind::ActivityId,
-                                extension_count > 0,
-                            ),
-                        );
-                        headers_ptr = append_bytes(headers_ptr, aid);
-                        headers_ptr = append_bytes(headers_ptr, rid);
-                    }
-                },
-            }
-
-            if meta_len != 0 {
-                extension_count -= 1;
-                headers_ptr = append_bytes(
-                    headers_ptr,
-                    &EventHeaderExtension::from_parts(
-                        meta_len,
-                        ExtensionKind::Metadata,
-                        extension_count > 0,
-                    ),
-                );
-            }
-
-            headers_len = headers_ptr.offset_from(headers.as_mut_ptr()) as usize;
-        }
-
-        debug_assert!(headers_len <= headers.len());
-        debug_assert!(extension_count == 0);
-
-        let writev_result = self.writev(data, &headers[0..headers_len]);
+        let writev_result = self.writev(data, headers);
         return writev_result;
     }
 

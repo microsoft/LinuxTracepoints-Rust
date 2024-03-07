@@ -10,11 +10,11 @@ use core::ptr;
 use core::str;
 use core::sync::atomic;
 
+use tracepoint::EventDataDescriptor;
+
 use crate::Level;
 use crate::_internal;
-use crate::descriptors::EventDataDescriptor;
 use crate::descriptors::EventHeader;
-use crate::native;
 
 #[allow(unused_imports)] // For docs
 #[cfg(feature = "macros")]
@@ -257,7 +257,7 @@ pub const unsafe fn provider_new<'a>(
 
 /// Stores the information needed for registering and managing a tracepoint.
 pub struct EventHeaderTracepoint<'a> {
-    state: native::TracepointState,
+    state: _internal::TracepointState,
     header: EventHeader,
     keyword: u64,
     metadata: &'a [u8],
@@ -267,7 +267,7 @@ impl<'a> EventHeaderTracepoint<'a> {
     /// Sets up the data for managing a tracepoint.
     pub const fn new(header: EventHeader, keyword: u64, metadata: &'a [u8]) -> Self {
         return Self {
-            state: native::TracepointState::new(0),
+            state: _internal::TracepointState::new(0),
             header,
             keyword,
             metadata,
@@ -301,7 +301,8 @@ impl<'a> EventHeaderTracepoint<'a> {
     {
         debug_assert!(data[1].is_empty());
         data[1] = EventDataDescriptor::<'a>::from_bytes(self.metadata);
-        return self.state.write_eventheader(
+        return _internal::write_eventheader(
+            &self.state,
             &self.header,
             activity_id,
             related_id,
