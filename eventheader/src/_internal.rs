@@ -24,7 +24,7 @@ pub use crate::provider::EventHeaderTracepoint;
 
 /// Type string for use in the DIAG_IOCSREG command string.
 pub const EVENTHEADER_COMMAND_TYPES: &str =
-    "u8 eventheader_flags;u8 version;u16 id;u16 tag;u8 opcode;u8 level";
+    "u8 eventheader_flags; u8 version; u16 id; u16 tag; u8 opcode; u8 level";
 
 /// Maximum length of a Tracepoint name "ProviderName_Attributes\0" (includes nul).
 pub const EVENTHEADER_NAME_MAX: usize = 256;

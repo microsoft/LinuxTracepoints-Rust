@@ -332,7 +332,7 @@ impl Write for CommandStringBuffer {
 }
 
 /// Helper for creating a command string for registering a tracepoint, e.g.
-/// `ProviderName_L1K1f u8 eventheader_flags;u8 version;u16 id;u16 tag;u8 opcode;u8 level`.
+/// `ProviderName_L1K1f u8 eventheader_flags; u8 version; u16 id; u16 tag; u8 opcode; u8 level`.
 pub struct CommandString(CommandStringBuffer);
 
 impl CommandString {
@@ -345,7 +345,7 @@ impl CommandString {
     }
 
     /// Gets the CStr for the specified parameters:
-    /// `ProviderName_LnnKnn... u8 eventheader_flags;u8 version;u16 id;u16 tag;u8 opcode;u8 level`.
+    /// `ProviderName_LnnKnn... u8 eventheader_flags; u8 version; u16 id; u16 tag; u8 opcode; u8 level`.
     pub fn format(
         &mut self,
         provider_name: &[u8],
