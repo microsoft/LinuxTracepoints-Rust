@@ -6,11 +6,15 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
-/// # v0.4.0 (TBD)
+/// # v0.4.0 (2024-04-12)
+/// - BUG FIX: Fix `EADDRINUSE` returned during `register()` on newer kernels.
+///   The "name already in use" detection splits on whitespace, while all other
+///   processing splits on semicolon. Fix by adding space after each semicolon
+///   in `EVENTHEADER_COMMAND_TYPES`.
 /// - Move non-eventheader code into separate `tracepoint` crate.
 pub mod v0_4_0 {}
 
-/// # v0.3.5 (2023-02-27)
+/// # v0.3.5 (2024-02-27)
 /// - Open `user_events_data` for WRONLY instead of RDWR.
 pub mod v0_3_5 {}
 
