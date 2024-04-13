@@ -419,11 +419,11 @@ impl TracepointState {
     /// understand behavior or track down issues.
     ///
     /// `_name_args` is the tracepoint definition in the format
-    /// `Name[ FieldDef1[;FieldDef2...]]`. For example:
+    /// `Name[ FieldDef1[; FieldDef2...]]`. For example:
     ///
     /// - `MyTracepoint1`
     /// - `MyTracepoint2 u32 Field1`
-    /// - `MyTracepoint3 u32 Field1;char Field2[20]`
+    /// - `MyTracepoint3 u32 Field1; char Field2[20]`
     ///
     /// # Safety
     ///
@@ -444,11 +444,11 @@ impl TracepointState {
     /// understand behavior or track down issues.
     ///
     /// `_name_args` is the tracepoint definition in the format
-    /// `Name[ FieldDef1[;FieldDef2...]]`. For example:
+    /// `Name[ FieldDef1[; FieldDef2...]]`. For example:
     ///
     /// - `MyTracepoint1`
     /// - `MyTracepoint2 u32 Field1`
-    /// - `MyTracepoint3 u32 Field1;char Field2[20]`
+    /// - `MyTracepoint3 u32 Field1; char Field2[20]`
     ///
     /// `_flags` is normally `0`, but may also be set to a `user_reg` flag such as
     /// `USER_EVENT_REG_PERSIST`.
