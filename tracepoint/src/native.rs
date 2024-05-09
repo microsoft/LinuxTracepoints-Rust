@@ -3,13 +3,15 @@
 
 use core::ffi;
 use core::marker;
-use core::mem::size_of;
 use core::pin::Pin;
 use core::sync::atomic::AtomicI32;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 
 use crate::descriptors::EventDataDescriptor;
+
+#[cfg(all(target_os = "linux", feature = "user_events"))]
+use core::mem::size_of;
 
 #[cfg(all(target_os = "linux", feature = "user_events"))]
 use libc as linux;
