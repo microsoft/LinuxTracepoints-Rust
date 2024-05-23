@@ -1,0 +1,26 @@
+[package]
+name = "eventheader_decode"
+version = "0.4.1"
+edition = "2021"
+authors = ["Microsoft"]
+license = "MIT"
+description = "Rust API for eventheader-encoded Linux Tracepoints via user_events"
+keywords = [
+    "user_events",
+    "eventheader",
+    "tracepoints",
+    "trace",
+    "logging",
+]
+categories = [
+    "api-bindings",
+    "development-tools::debugging",
+    "development-tools::profiling",
+    "no-std",
+]
+repository = "https://github.com/microsoft/LinuxTracepoints-Rust"
+readme = "README.md"
+rust-version = "1.63"
+
+[dependencies]
+eventheader_types = { version = "= 0.4.1", path = "../eventheader_types" }

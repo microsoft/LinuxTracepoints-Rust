@@ -6,4 +6,5 @@ members = [
     "eventheader_dynamic",
     "eventheader_macros",
     "eventheader_types",
+    "eventheader_decode",
 ]

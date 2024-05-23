@@ -29,6 +29,11 @@ impl HeaderFlags {
         return self.0;
     }
 
+    /// Returns true if (self & flag) != 0.
+    pub const fn has_flag(self, flag: HeaderFlags) -> bool {
+        return (self.0 & flag.0) != 0;
+    }
+
     /// Pointer-32, big-endian, no extension blocks.
     pub const None: Self = HeaderFlags(0);
 
@@ -92,6 +97,11 @@ impl ExtensionKind {
     /// Returns the numeric value corresponding to this ExtensionKind value.
     pub const fn as_int(self) -> u16 {
         return self.0;
+    }
+
+    /// Returns true if (self & flag) != 0.
+    pub const fn has_flag(self, flag: ExtensionKind) -> bool {
+        return (self.0 & flag.0) != 0;
     }
 
     /// Invalid extension kind.
@@ -203,6 +213,36 @@ impl FieldEncoding {
     /// Returns the numeric value corresponding to this `FieldEncoding` value.
     pub const fn as_int(self) -> u8 {
         return self.0;
+    }
+
+    /// Returns the encoding without any flags (encoding & ValueMask).
+    pub const fn base_encoding(self) -> FieldEncoding {
+        return FieldEncoding::from_int(self.0 & Self::ValueMask);
+    }
+
+    /// Returns the array flags of the encoding (encoding & (CArrayFlag | VArrayFlag)).
+    pub const fn array_flags(self) -> u8 {
+        return self.0 & (Self::CArrayFlag | Self::VArrayFlag);
+    }
+
+    /// Returns true if any array flag is present (constant-length or variable-length array).
+    pub const fn is_array(self) -> bool {
+        return 0 != (self.0 & (Self::CArrayFlag | Self::VArrayFlag));
+    }
+
+    /// Returns true if CArrayFlag is present (constant-length array).
+    pub const fn is_carray(self) -> bool {
+        return 0 != (self.0 & Self::CArrayFlag);
+    }
+
+    /// Returns true if VArrayFlag is present (variable-length array).
+    pub const fn is_varray(self) -> bool {
+        return 0 != (self.0 & Self::VArrayFlag);
+    }
+
+    /// Returns true if ChainFlag is present (format byte is present in event).
+    pub const fn has_chain_flag(self) -> bool {
+        return 0 != (self.0 & Self::ChainFlag);
     }
 
     /// Invalid encoding value.
@@ -336,6 +376,16 @@ impl FieldFormat {
     /// Returns the numeric value corresponding to this FieldFormat value.
     pub const fn as_int(self) -> u8 {
         return self.0;
+    }
+
+    /// Returns the encoding without any flags (format & ValueMask).
+    pub const fn base_encoding(self) -> FieldFormat {
+        return FieldFormat::from_int(self.0 & Self::ValueMask);
+    }
+
+    /// Returns true if ChainFlag is present (tag present in event).
+    pub const fn has_chain_flag(self) -> bool {
+        return 0 != (self.0 & Self::ChainFlag);
     }
 
     /// Use the default format of the encoding.
