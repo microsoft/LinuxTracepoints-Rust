@@ -7,7 +7,7 @@ use core::fmt;
 use core::mem::size_of;
 
 #[allow(unused_imports)]
-use crate::descriptors::EventHeader; // For docs
+use crate::descriptors::*; // For docs
 
 /// Values for [`EventHeader::flags`].
 ///
@@ -217,7 +217,7 @@ impl FieldEncoding {
 
     /// Returns the encoding without any flags (encoding & ValueMask).
     pub const fn base_encoding(self) -> FieldEncoding {
-        return FieldEncoding::from_int(self.0 & Self::ValueMask);
+        return Self(self.0 & Self::ValueMask);
     }
 
     /// Returns the array flags of the encoding (encoding & (CArrayFlag | VArrayFlag)).
@@ -326,6 +326,9 @@ impl FieldEncoding {
     /// Mask for the flags.
     pub const FlagMask: u8 = 0xE0;
 
+    /// Mask for the array flags.
+    pub const ArrayFlagMask: u8 = 0x60;
+
     /// Constant-length array: 16-bit element count in metadata (count must not be 0).
     pub const CArrayFlag: u8 = 0x20;
 
@@ -380,7 +383,7 @@ impl FieldFormat {
 
     /// Returns the encoding without any flags (format & ValueMask).
     pub const fn base_encoding(self) -> FieldFormat {
-        return FieldFormat::from_int(self.0 & Self::ValueMask);
+        return Self(self.0 & Self::ValueMask);
     }
 
     /// Returns true if ChainFlag is present (tag present in event).

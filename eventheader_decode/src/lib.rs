@@ -3,7 +3,7 @@
 
 #![no_std]
 #![allow(clippy::needless_return)]
-//#![warn(missing_docs)] // TODO
+#![warn(missing_docs)]
 
 //! EventHeader decoding
 
@@ -13,12 +13,12 @@ pub use enumerator::EventHeaderEnumeratorError;
 pub use enumerator::EventHeaderEnumeratorState;
 pub use enumerator::EventHeaderEventInfo;
 pub use enumerator::EventHeaderItemInfo;
-pub use reader::PerfByteReader;
-pub use perf_item::PerfItemType;
+pub use byte_reader::PerfByteReader;
+pub use perf_item::PerfItemMetadata;
 pub use perf_item::PerfItemValue;
 
 pub mod changelog;
 
 mod enumerator;
 mod perf_item;
-mod reader;
+mod byte_reader;

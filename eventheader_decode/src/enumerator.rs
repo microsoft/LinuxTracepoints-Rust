@@ -1,17 +1,17 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-use core::str;
 use core::mem;
+use core::str;
 
 use eventheader_types::*;
 
 use crate::PerfByteReader;
-use crate::PerfItemType;
+use crate::PerfItemMetadata;
 use crate::PerfItemValue;
 
+#[derive(Clone, Copy, Debug)]
 enum SubState {
-    None,
     Error,
     AfterLastItem,
     BeforeFirstItem,
@@ -25,8 +25,10 @@ enum SubState {
     StructEnd,
 }
 
-fn lowercase_hex_to_int(str: &[u8], pos: usize, value: &mut u64) -> usize {
+// Returns (val, end_pos).
+fn lowercase_hex_to_int(str: &[u8], start_pos: usize) -> (u64, usize) {
     let mut val: u64 = 0;
+    let mut pos = start_pos;
     while pos < str.len() {
         let nibble;
         let ch = str[pos];
@@ -39,13 +41,13 @@ fn lowercase_hex_to_int(str: &[u8], pos: usize, value: &mut u64) -> usize {
         }
 
         val = (val << 4) + (nibble as u64);
+        pos += 1;
     }
 
-    *value = val;
-    return pos;
+    return (val, pos);
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct StackEntry {
     /// event_data[next_offset] starts next field's name.
     pub next_offset: u32,
@@ -78,7 +80,7 @@ impl StackEntry {
     };
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct FieldType {
     pub encoding: FieldEncoding,
     pub format: FieldFormat,
@@ -112,9 +114,6 @@ pub enum EventHeaderEnumeratorError {
 /// Values for the State property of [`EventHeaderEnumerator`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum EventHeaderEnumeratorState {
-    /// Invalid state.
-    None,
-
     /// After an error has been returned by `move_next`.
     /// `move_next()` and `item_info()` are invalid operations for this state.
     Error,
@@ -147,8 +146,24 @@ pub enum EventHeaderEnumeratorState {
     StructEnd,
 }
 
+impl EventHeaderEnumeratorState {
+    /// Returns true if `move_next()` is a valid operation for this state,
+    /// i.e. returns `self >= BeforeFirstItem`. This is false for the
+    /// `None`, `Error`, and `AfterLastItem` states.
+    pub const fn can_move_next(self) -> bool {
+        return self as u8 >= EventHeaderEnumeratorState::BeforeFirstItem as u8;
+    }
+
+    /// Returns true if `item_info()` is a valid operation for this state,
+    /// i.e. returns `self >= Value`. This is false for the
+    /// `None`, `Error`, `AfterLastItem`, and `BeforeFirstItem` states.
+    pub const fn can_item_info(self) -> bool {
+        return self as u8 >= EventHeaderEnumeratorState::Value as u8;
+    }
+}
+
 /// Event attributes returned by the `event_info()` method of [`EventHeaderEnumerator`].
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct EventHeaderEventInfo<'nam, 'dat> {
     tracepoint_name: &'nam str,
     event_data: &'dat [u8],
@@ -285,6 +300,7 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
 /// Provides access to the name and value of an EventHeader event item. An item is a
 /// field of the event or an element of an array field of the event. This struct is
 /// returned by the `item_info()` method of [`EventHeaderEnumerator`].
+#[derive(Clone, Copy, Debug)]
 pub struct EventHeaderItemInfo<'dat> {
     event_data: &'dat [u8],
     name_start: u32,
@@ -314,9 +330,9 @@ impl<'dat> EventHeaderItemInfo<'dat> {
         return &self.value;
     }
 
-    /// Returns the field's type information.
-    pub fn item_type(&self) -> PerfItemType {
-        return self.value.item_type();
+    /// Returns the field's metadata (e.g. type information).
+    pub fn metadata(&self) -> PerfItemMetadata {
+        return self.value.metadata();
     }
 
     /// Returns the field's name as a byte slice. In a well-formed event, this will be valid UTF-8.
@@ -349,6 +365,7 @@ impl<'dat> EventHeaderItemInfo<'dat> {
 ///     of an array, the start/end of a struct, or the end of the event (after last item).
 ///   - Call `item_info()` to get information about the each item.
 /// - Reset the enumerator with `reset()` to restart enumeration of the same event.
+#[derive(Debug)]
 pub struct EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     context: &'ctx mut EventHeaderEnumeratorContext,
     tracepoint_name: &'nam str,
@@ -381,36 +398,14 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
         };
     }
 
-    /// Gets type information of the current item. This is a subset of
-    /// the information returned by item_info().
-    /// The current item changes each time `move_next()` is called.
-    ///
-    /// **PRECONDITION (debug_assert):** Can be called when `state > BeforeFirstItem`,
-    /// i.e. after `move_next()` returns true.
-    pub fn item_type(&self) -> PerfItemType {
-        debug_assert!(self.state() > EventHeaderEnumeratorState::BeforeFirstItem);
-        return PerfItemType::new(
-            self.context.byte_reader,
-            self.context.field_type.encoding,
-            self.context.field_type.format,
-            self.context.element_size,
-            if self.context.state == EventHeaderEnumeratorState::Value {
-                1
-            } else {
-                self.context.stack_top.array_count
-            },
-            self.context.field_type.tag,
-        );
-    }
-
     /// Gets information about the current item, e.g. the item's name,
     /// the item's type (integer, string, float, etc.), data pointer, data size.
     /// The current item changes each time `move_next()` is called.
     ///
-    /// **PRECONDITION (debug_assert):** Can be called when `state > BeforeFirstItem`,
+    /// **PRECONDITION (debug_assert):** Can be called when `self.state().can_item_info()`,
     /// i.e. after `move_next()` returns true.
     pub fn item_info(&self) -> EventHeaderItemInfo<'dat> {
-        debug_assert!(self.state() > EventHeaderEnumeratorState::BeforeFirstItem);
+        debug_assert!(self.context.state.can_item_info());
         let data_pos = self.context.data_pos_cooked as usize;
         return EventHeaderItemInfo {
             event_data: self.event_data,
@@ -418,9 +413,34 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
             name_len: self.context.stack_top.name_len as u32,
             value: PerfItemValue::new(
                 &self.event_data[data_pos..data_pos + self.context.item_size_cooked as usize],
-                self.item_type(),
+                self.item_metadata(),
             ),
         };
+    }
+
+    /// Gets metadata (type, endian, tag) information of the current item.
+    /// This is a subset of the information returned by item_info().
+    /// The current item changes each time `move_next()` is called.
+    ///
+    /// **PRECONDITION (debug_assert):** Can be called when `self.state().can_item_info()`,
+    /// i.e. after `move_next()` returns true.
+    pub fn item_metadata(&self) -> PerfItemMetadata {
+        debug_assert!(self.context.state.can_item_info());
+        let is_scalar = self.context.state < EventHeaderEnumeratorState::ArrayBegin
+            || self.context.state > EventHeaderEnumeratorState::ArrayEnd;
+        return PerfItemMetadata::new(
+            self.context.byte_reader,
+            self.context.field_type.encoding,
+            self.context.field_type.format,
+            is_scalar,
+            self.context.element_size,
+            if is_scalar {
+                1
+            } else {
+                self.context.stack_top.array_count
+            },
+            self.context.field_type.tag,
+        );
     }
 
     /// Gets the remaining event payload, i.e. the event data that has not yet
@@ -452,7 +472,7 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     /// of the event if no more items. Returns true if moved to a valid item,
     /// false if no more items or decoding error.
     ///
-    /// **PRECONDITION (debug_assert):** Can be called when `state >= BeforeFirstItem`.
+    /// **PRECONDITION (debug_assert):** Can be called when `self.state().can_move_next()`.
     ///
     /// - Returns true if moved to a valid item.
     /// - Returns false and sets state to AfterLastItem if no more items.
@@ -471,7 +491,7 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     ///   enumeration to AFTER the corresponding ArrayEnd or StructEnd.
     /// - Otherwise, this is the same as `move_next()`.
     ///
-    /// **PRECONDITION (debug_assert):** Can be called when `state >= BeforeFirstItem`.
+    /// **PRECONDITION (debug_assert):** Can be called when `self.state().can_move_next()`.
     ///
     /// - Returns true if moved to a valid item.
     /// - Returns false and sets state to AfterLastItem if no more items.
@@ -487,7 +507,7 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     /// field declaration (not the next field value). Returns true if moved to a valid
     /// item, false if no more items or decoding error.
     ///
-    /// **PRECONDITION (debug_assert):** Can be called when `state >= BeforeFirstItem`.
+    /// **PRECONDITION (debug_assert):** Can be called when `self.state().can_move_next()`.
     ///
     /// - Returns true if moved to a valid item.
     /// - Returns false and sets state to AfterLastItem if no more items.
@@ -517,6 +537,7 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
 /// - Create an [`EventHeaderEnumeratorContext`] context. For optimal performance, reuse the
 ///   context for many events instead of constructing a new context for each event.
 /// - Call `context.enumerate(tracepoint_name, event_data)` to get the enumerator for the event.
+#[derive(Debug)]
 pub struct EventHeaderEnumeratorContext {
     // Set by StartEvent:
     header: EventHeader,
@@ -579,8 +600,8 @@ impl EventHeaderEnumeratorContext {
             move_next_remaining: 0,
             stack_top: StackEntry::ZERO,
             stack_index: 0,
-            state: EventHeaderEnumeratorState::None,
-            substate: SubState::None,
+            state: EventHeaderEnumeratorState::Error,
+            substate: SubState::Error,
             last_error: EventHeaderEnumeratorError::Success,
             element_size: 0,
             field_type: FieldType {
@@ -652,13 +673,14 @@ impl EventHeaderEnumeratorContext {
         // Get event header and validate it.
 
         self.header.flags = HeaderFlags::from_int(event_data[event_pos]);
-        self.byte_reader = PerfByteReader::new(!self.header.flags.has_flag(HeaderFlags::LittleEndian));
+        self.byte_reader =
+            PerfByteReader::new(!self.header.flags.has_flag(HeaderFlags::LittleEndian));
         event_pos += 1;
         self.header.version = event_data[event_pos];
         event_pos += 1;
-        self.header.id = self.byte_reader.read_u16_at(event_data, event_pos);
+        self.header.id = self.byte_reader.read_u16(&event_data[event_pos..]);
         event_pos += 2;
-        self.header.tag = self.byte_reader.read_u16_at(event_data, event_pos);
+        self.header.tag = self.byte_reader.read_u16(&event_data[event_pos..]);
         event_pos += 2;
         self.header.opcode = Opcode::from_int(event_data[event_pos]);
         event_pos += 1;
@@ -691,8 +713,8 @@ impl EventHeaderEnumeratorContext {
             return Err(EventHeaderEnumeratorError::NotSupported);
         }
 
-        let mut attrib_level = 0;
-        attrib_pos = lowercase_hex_to_int(tp_name_bytes, attrib_pos + 1, &mut attrib_level);
+        let attrib_level;
+        (attrib_level, attrib_pos) = lowercase_hex_to_int(tp_name_bytes, attrib_pos + 1);
         if attrib_level != self.header.level.as_int() as u64 {
             // Not a supported event: name's level != header's level.
             return Err(EventHeaderEnumeratorError::NotSupported);
@@ -703,7 +725,7 @@ impl EventHeaderEnumeratorContext {
             return Err(EventHeaderEnumeratorError::NotSupported);
         }
 
-        attrib_pos = lowercase_hex_to_int(tp_name_bytes, attrib_pos + 1, &mut self.keyword);
+        (self.keyword, attrib_pos) = lowercase_hex_to_int(tp_name_bytes, attrib_pos + 1);
 
         // Validate but ignore any other attributes.
 
@@ -738,10 +760,10 @@ impl EventHeaderEnumeratorContext {
                     return Err(EventHeaderEnumeratorError::InvalidData);
                 }
 
-                let ext_size = self.byte_reader.read_u16_at(event_data, event_pos);
+                let ext_size = self.byte_reader.read_u16(&event_data[event_pos..]);
                 event_pos += 2;
                 let ext_kind =
-                    ExtensionKind::from_int(self.byte_reader.read_u16_at(event_data, event_pos));
+                    ExtensionKind::from_int(self.byte_reader.read_u16(&event_data[event_pos..]));
                 event_pos += 2;
 
                 if event_data.len() - event_pos < ext_size as usize {
@@ -826,7 +848,7 @@ impl EventHeaderEnumeratorContext {
     }
 
     fn move_next(&mut self, event_data: &[u8]) -> bool {
-        debug_assert!(self.state >= EventHeaderEnumeratorState::BeforeFirstItem);
+        debug_assert!(self.state.can_move_next());
 
         if self.move_next_remaining == 0 {
             return self.set_error_state(EventHeaderEnumeratorError::ImplementationLimit);
@@ -988,6 +1010,7 @@ impl EventHeaderEnumeratorContext {
     }
 
     fn move_next_sibling(&mut self, event_data: &[u8]) -> bool {
+        debug_assert!(self.state.can_move_next());
         let mut moved_to_item;
         let mut depth = 0; // May reach -1 if we start on ArrayEnd/StructEnd.
         loop {
@@ -1078,12 +1101,13 @@ impl EventHeaderEnumeratorContext {
                 } else {
                     self.stack_top.array_count = self
                         .byte_reader
-                        .read_u16_at(event_data, self.stack_top.next_offset as usize);
+                        .read_u16(&event_data[self.stack_top.next_offset as usize..]);
                     self.stack_top.next_offset += 2;
 
                     if self.stack_top.array_count == 0 {
                         // Constant-length array cannot have length of 0 (potential for DoS).
-                        moved_to_item = self.set_error_state(EventHeaderEnumeratorError::InvalidData);
+                        moved_to_item =
+                            self.set_error_state(EventHeaderEnumeratorError::InvalidData);
                     } else {
                         moved_to_item = true;
                         self.set_state(
@@ -1201,7 +1225,7 @@ impl EventHeaderEnumeratorContext {
 
                 self.stack_top.array_count = self
                     .byte_reader
-                    .read_u16_at(event_data, self.data_pos_raw as usize);
+                    .read_u16(&event_data[self.data_pos_raw as usize..]);
                 self.data_pos_raw += 2;
 
                 return self.start_array(event_data.len() as u32); // StartArray will set Flags.
@@ -1216,7 +1240,7 @@ impl EventHeaderEnumeratorContext {
 
                 self.stack_top.array_count = self
                     .byte_reader
-                    .read_u16_at(event_data, self.stack_top.next_offset as usize);
+                    .read_u16(&event_data[self.stack_top.next_offset as usize..]);
                 self.stack_top.next_offset += 2;
 
                 if self.stack_top.array_count == 0 {
@@ -1314,7 +1338,7 @@ impl EventHeaderEnumeratorContext {
                         // Missing tag.
                         encoding = Self::READ_FIELD_ERROR;
                     } else {
-                        tag = self.byte_reader.read_u16_at(event_data, pos as usize);
+                        tag = self.byte_reader.read_u16(&event_data[pos as usize..]);
                         pos += 2;
                     }
                 }
@@ -1541,7 +1565,7 @@ impl EventHeaderEnumeratorContext {
 
             let cch = self
                 .byte_reader
-                .read_u16_at(event_data, self.data_pos_raw as usize);
+                .read_u16(&event_data[self.data_pos_raw as usize..]);
             self.item_size_cooked = (cch as u32) << char_size_shift;
             self.item_size_raw = self.item_size_cooked + 2;
         }
@@ -1571,5 +1595,28 @@ impl EventHeaderEnumeratorContext {
 impl Default for EventHeaderEnumeratorContext {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_to_int() {
+        assert_eq!(lowercase_hex_to_int(b"", 0), (0, 0));
+        assert_eq!(lowercase_hex_to_int(b" ", 0), (0, 0));
+        assert_eq!(lowercase_hex_to_int(b" ", 1), (0, 1));
+        assert_eq!(lowercase_hex_to_int(b"0", 0), (0, 1));
+        assert_eq!(lowercase_hex_to_int(b"0", 1), (0, 1));
+        assert_eq!(lowercase_hex_to_int(b"gfedcba9876543210ABCDEFG", 0), (0, 0));
+        assert_eq!(
+            lowercase_hex_to_int(b"gfedcba9876543210ABCDEFG", 1),
+            (0xfedcba9876543210, 17)
+        );
+        assert_eq!(
+            lowercase_hex_to_int(b"gfedcba9876543210ABCDEFG", 2),
+            (0xedcba9876543210, 17)
+        );
     }
 }
