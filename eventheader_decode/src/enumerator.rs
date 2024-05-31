@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+use core::fmt;
+use core::iter;
 use core::mem;
 use core::str;
 
@@ -85,6 +87,200 @@ struct FieldType {
     pub encoding: FieldEncoding,
     pub format: FieldFormat,
     pub tag: u16,
+}
+
+/// An iterator that decodes the name of an event or a field in an EventHeader event.
+/// This iterator tries to interpret the name as UTF-8, but falls back to Latin1 if
+/// the name contains non-UTF-8 sequences.
+///
+/// This iterator is returned by [`EventHeaderEventInfo::name_chars`] or
+///  [`EventHeaderItemInfo::name_chars`].
+///
+/// Use one of the following methods to get the name:
+///
+/// - Pass the [`NameChars`] object to a format macro.
+///
+///   `format!("{}", info.name_chars())`
+///
+/// - Call [`NameChars::write_to`] to write the name to a writer, such as a string.
+///
+///   `info.name_chars().write_to(&mut my_string).unwrap()`
+///
+/// - Iterate to get the characters of the name.
+///   (Destructive: iteration consumes the iterator.)
+///
+///   `info.name_chars().collect::<String>()`
+#[derive(Clone, Copy, Debug)]
+pub struct NameChars<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> NameChars<'a> {
+    /// Creates a new iterator over the bytes of an event or field name.
+    pub fn new(bytes: &'a [u8]) -> NameChars<'a> {
+        return NameChars { bytes };
+    }
+
+    /// Writes the name to a writer, converting invalid UTF-8 to Latin1.
+    pub fn write_to<W: fmt::Write>(&self, w: &mut W) -> fmt::Result {
+        // Minimize the number of calls to write_str():
+        // Find valid sequences of UTF-8 and write them in one call.
+
+        let len = self.bytes.len();
+        let mut last_flush = 0;
+        let mut pos = 0;
+        while pos < len {
+            // If this is valid UTF-8, update pos and continue to next iteration.
+            // If this is not valid UTF-8, fall-through to the Latin1 case.
+            let b0 = self.bytes[pos];
+
+            if b0 <= 0x7F {
+                // 0x00..0x7F: Valid UTF-8. Continue.
+                pos += 1;
+                continue;
+            } else if b0 <= 0xBF {
+                // Invalid lead byte. Fall-through.
+            } else if b0 <= 0xDF {
+                if len - pos >= 2 {
+                    let b1 = self.bytes[pos + 1];
+                    if 0x80 == (b1 & 0xC0) {
+                        let ch = ((b0 & 0x1F) as u32) << 6 | ((b1 & 0x3F) as u32);
+                        if 0x80 <= ch {
+                            // Valid 2-byte UTF-8. Continue.
+                            pos += 2;
+                            continue;
+                        }
+                    }
+                }
+            } else if b0 <= 0xEF {
+                if len - pos >= 3 {
+                    let b1 = self.bytes[pos + 1];
+                    let b2 = self.bytes[pos + 2];
+                    if 0x80 == (b1 & 0xC0) && 0x80 == (b2 & 0xC0) {
+                        let ch = ((b0 & 0x0F) as u32) << 12
+                            | ((b1 & 0x3F) as u32) << 6
+                            | ((b2 & 0x3F) as u32);
+                        if 0x800 <= ch {
+                            // Valid 3-byte UTF-8. Continue.
+                            pos += 3;
+                            continue;
+                        }
+                    }
+                }
+            } else if b0 <= 0xF4 {
+                #[allow(clippy::collapsible_if)] // The symmetry seems helpful.
+                if len - pos >= 4 {
+                    let b1 = self.bytes[pos + 1];
+                    let b2 = self.bytes[pos + 2];
+                    let b3 = self.bytes[pos + 3];
+                    if 0x80 == (b1 & 0xC0) && 0x80 == (b2 & 0xC0) && 0x80 == (b3 & 0xC0) {
+                        let ch = ((b0 & 0x07) as u32) << 18
+                            | ((b1 & 0x3F) as u32) << 12
+                            | ((b2 & 0x3F) as u32) << 6
+                            | ((b3 & 0x3F) as u32);
+                        if (0x10000..=0x10FFFF).contains(&ch) {
+                            // Valid 4-byte UTF-8. Continue.
+                            pos += 4;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // Invalid UTF-8 byte b0.
+            // Flush the valid UTF-8, if any.
+
+            if last_flush < pos {
+                w.write_str(unsafe { str::from_utf8_unchecked(&self.bytes[last_flush..pos]) })?;
+            }
+
+            // Treat b0 as Latin1.
+            w.write_char(b0 as char)?;
+            pos += 1;
+            last_flush = pos;
+        }
+
+        if last_flush < pos {
+            w.write_str(unsafe { str::from_utf8_unchecked(&self.bytes[last_flush..pos]) })?;
+        }
+
+        return Ok(());
+    }
+}
+
+impl<'a> Iterator for NameChars<'a> {
+    type Item = char;
+
+    fn next(&mut self) -> Option<char> {
+        let len = self.bytes.len();
+        if len == 0 {
+            return None;
+        }
+
+        let b0 = self.bytes[0];
+        if b0 <= 0xBF {
+            // 0x00..0x7F: ASCII - pass through.
+            // 0x80..0xBF: Invalid lead byte - pass through.
+        } else if len > 1 {
+            let b1 = self.bytes[1];
+            if (b1 & 0xC0) != 0x80 {
+                // Invalid trail byte - pass through.
+            } else if b0 <= 0xDF {
+                let ch = ((b0 & 0x1F) as u32) << 6 | ((b1 & 0x3F) as u32);
+                if 0x80 <= ch {
+                    // Valid 2-byte UTF-8.
+                    self.bytes = &self.bytes[2..];
+                    return Some(unsafe { char::from_u32_unchecked(ch) });
+                }
+            } else if len > 2 {
+                let b2 = self.bytes[2];
+                if (b2 & 0xC0) != 0x80 {
+                    // Invalid trail byte - pass through.
+                } else if b0 <= 0xEF {
+                    let ch = ((b0 & 0x0F) as u32) << 12
+                        | ((b1 & 0x3F) as u32) << 6
+                        | ((b2 & 0x3F) as u32);
+                    if 0x800 <= ch {
+                        // Valid 3-byte UTF-8.
+                        self.bytes = &self.bytes[3..];
+                        return Some(unsafe { char::from_u32_unchecked(ch) });
+                    }
+                } else if len > 3 {
+                    let b3 = self.bytes[3];
+                    if (b3 & 0xC0) != 0x80 {
+                        // Invalid trail byte - pass through.
+                    } else if b0 <= 0xF4 {
+                        let ch = ((b0 & 0x07) as u32) << 18
+                            | ((b1 & 0x3F) as u32) << 12
+                            | ((b2 & 0x3F) as u32) << 6
+                            | ((b3 & 0x3F) as u32);
+                        if (0x10000..=0x10FFFF).contains(&ch) {
+                            // Valid 4-byte UTF-8.
+                            self.bytes = &self.bytes[4..];
+                            return Some(unsafe { char::from_u32_unchecked(ch) });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Pass through: treat b0 as Latin1.
+        self.bytes = &self.bytes[1..];
+        return Some(b0 as char);
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.bytes.len();
+        return (len / 4, Some(len));
+    }
+}
+
+impl<'a> iter::FusedIterator for NameChars<'a> {}
+
+impl<'a> fmt::Display for NameChars<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+        return self.write_to(f);
+    }
 }
 
 /// Values for the `last_error()` property of [`EventHeaderEnumerator`].
@@ -220,18 +416,20 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
         return self.keyword;
     }
 
-    /// Returns the event name as a byte slice. In a well-formed event, this will be valid UTF-8.
+    /// Returns the event's name as a byte slice. In a well-formed event, this will be valid UTF-8.
+    /// To handle cases where the name is not valid UTF-8, use `name_chars()` instead.
     pub fn name_bytes(&self) -> &'dat [u8] {
         let start = self.name_start as usize;
         let end = start + self.name_len as usize;
         return &self.event_data[start..end];
     }
 
-    /// Returns the event name as a string, or an error if the name is not valid UTF-8.
-    pub fn name(&self) -> Result<&str, str::Utf8Error> {
+    /// Returns an iterator over the characters of the event's name.
+    /// This tries to interpret the event name as UTF-8, but falls back to Latin1 for invalid UTF-8.
+    pub fn name_chars(&self) -> NameChars<'dat> {
         let start = self.name_start as usize;
         let end = start + self.name_len as usize;
-        return core::str::from_utf8(&self.event_data[start..end]);
+        return NameChars::new(&self.event_data[start..end]);
     }
 
     /// Returns the provider name (extracted from `tracepoint_name`).
@@ -336,17 +534,19 @@ impl<'dat> EventHeaderItemInfo<'dat> {
     }
 
     /// Returns the field's name as a byte slice. In a well-formed event, this will be valid UTF-8.
+    /// To handle cases where the name is not valid UTF-8, use `name_chars()` instead.
     pub fn name_bytes(&self) -> &'dat [u8] {
         let start = self.name_start as usize;
         let end = start + self.name_len as usize;
         return &self.event_data[start..end];
     }
 
-    /// Returns the field's name as a string, or an error if the name is not valid UTF-8.
-    pub fn name(&self) -> Result<&str, str::Utf8Error> {
+    /// Returns an iterator over the characters of the field's name.
+    /// This tries to interpret the field name as UTF-8, but falls back to Latin1 for invalid UTF-8.
+    pub fn name_chars(&self) -> NameChars<'dat> {
         let start = self.name_start as usize;
         let end = start + self.name_len as usize;
-        return core::str::from_utf8(&self.event_data[start..end]);
+        return NameChars::new(&self.event_data[start..end]);
     }
 }
 

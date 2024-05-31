@@ -1,8 +1,117 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-use crate::*;
+use crate::PerfByteReader;
 use eventheader_types::*;
+
+/// Flags used when formatting a value as a string.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PerfConvertOptions(u32);
+
+#[allow(non_upper_case_globals)]
+impl PerfConvertOptions {
+    /// Returns a `PerfConvertOptions` with the specified numeric value.
+    pub const fn from_int(value: u32) -> Self {
+        return Self(value);
+    }
+
+    /// Returns the numeric value corresponding to this `PerfConvertOptions` value.
+    pub const fn as_int(self) -> u32 {
+        return self.0;
+    }
+
+    /// Returns true if `self & flag != 0`.
+    pub const fn has(self, flag: PerfConvertOptions) -> bool {
+        return self.0 & flag.0 != 0;
+    }
+
+    /// Returns `self & flag`.
+    pub const fn and(self, flag: PerfConvertOptions) -> PerfConvertOptions {
+        return Self(self.0 & flag.0);
+    }
+
+    /// Returns `self | flag`.
+    pub const fn or(self, flag: PerfConvertOptions) -> PerfConvertOptions {
+        return Self(self.0 | flag.0);
+    }
+
+    /// Add spaces to the output, e.g. "Name": [ 1, 2, 3 ] instead of "Name":[1,2,3].
+    pub const Space: Self = Self(0x01);
+
+    /// When formatting with AppendJsonItemToAndMoveNextSibling, include the
+    /// "Name": prefix for the root item.
+    pub const RootName: Self = Self(0x02);
+
+    /// When formatting with AppendJsonItemToAndMoveNextSibling, for items with a
+    /// non-zero tag, add a tag suffix to the item's "Name": prefix, e.g.
+    /// "Name;tag=0xNNNN": "ItemValue".
+    pub const FieldTag: Self = Self(0x04);
+
+    /// If set, float will format with "g9" (single-precision) or "g17" (double-precision).
+    /// If unset, float will format with "g".
+    pub const FloatExtraPrecision: Self = Self(0x10);
+
+    /// If set, non-finite float will format as a string like "NaN" or "-Infinity".
+    /// If unset, non-finite float will format as a null.
+    pub const FloatNonFiniteAsString: Self = Self(0x20);
+
+    /// If set, hex integer will format in JSON as a string like "0xF123".
+    /// If unset, a hex integer will format in JSON as a decimal like 61731.
+    pub const IntHexAsString: Self = Self(0x40);
+
+    /// If set, boolean outside 0..1 will format as a string like "BOOL(-123)".
+    /// If unset, boolean outside 0..1 will format as a number like -123.
+    pub const BoolOutOfRangeAsString: Self = Self(0x80);
+
+    /// If set, UnixTime within year 0001..9999 will format as a string like "2024-04-08T23:59:59Z".
+    /// If unset, UnixTime within year 0001..9999 will format as a number like 1712620799.
+    pub const UnixTimeWithinRangeAsString: Self = Self(0x100);
+
+    /// If set, UnixTime64 outside year 0001..9999 will format as a string like "TIME(-62135596801)".
+    /// If unset, UnixTime64 outside year 0001..9999 will format as a number like -62135596801.
+    pub const UnixTimeOutOfRangeAsString: Self = Self(0x200);
+
+    /// If set, Errno within 0..133 will format as a string like "ERRNO(0)" or "ENOENT(2)".
+    /// If unset, Errno within 0..133 will format as a number like 0 or 2.
+    pub const ErrnoKnownAsString: Self = Self(0x400);
+
+    /// If set, Errno outside 0..133 will format as a string like "ERRNO(-1)".
+    /// If unset, Errno outside 0..133 will format as a number like -1.
+    pub const ErrnoUnknownAsString: Self = Self(0x800);
+
+    /// For non-JSON string conversions: replace control characters with space.
+    /// Conflicts with StringControlCharsJsonEscape.
+    pub const StringControlCharsReplaceWithSpace: Self = Self(0x10000);
+
+    /// For non-JSON string conversions: escape control characters using JSON-compatible
+    /// escapes sequences, e.g. "\n" for newline or "\u0000" for NUL.
+    /// Conflicts with StringControlCharsReplaceWithSpace.
+    pub const StringControlCharsJsonEscape: Self = Self(0x20000);
+
+    /// Mask for string control character flags.
+    pub const StringControlCharsMask: Self =
+        Self(Self::StringControlCharsReplaceWithSpace.0 | Self::StringControlCharsJsonEscape.0);
+
+    /// Default flags.
+    pub const Default: Self = Self(
+        Self::Space.0
+            | Self::RootName.0
+            | Self::FieldTag.0
+            | Self::FloatExtraPrecision.0
+            | Self::FloatNonFiniteAsString.0
+            | Self::IntHexAsString.0
+            | Self::BoolOutOfRangeAsString.0
+            | Self::UnixTimeWithinRangeAsString.0
+            | Self::UnixTimeOutOfRangeAsString.0
+            | Self::ErrnoKnownAsString.0
+            | Self::ErrnoUnknownAsString.0
+            | Self::StringControlCharsReplaceWithSpace.0,
+    );
+
+    /// All flags set.
+    pub const All: Self = Self(!0u32);
+}
 
 /// Provides access to the metadata
 /// of a perf event item. An item is a field of the event or an element of an
