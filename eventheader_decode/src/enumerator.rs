@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-use core::fmt;
-use core::iter;
 use core::mem;
 use core::str;
 
@@ -11,6 +9,7 @@ use eventheader_types::*;
 use crate::PerfByteReader;
 use crate::PerfItemMetadata;
 use crate::PerfItemValue;
+use crate::_internal;
 
 #[derive(Clone, Copy, Debug)]
 enum SubState {
@@ -110,178 +109,7 @@ struct FieldType {
 ///   (Destructive: iteration consumes the iterator.)
 ///
 ///   `info.name_chars().collect::<String>()`
-#[derive(Clone, Copy, Debug)]
-pub struct NameChars<'a> {
-    bytes: &'a [u8],
-}
-
-impl<'a> NameChars<'a> {
-    /// Creates a new iterator over the bytes of an event or field name.
-    pub fn new(bytes: &'a [u8]) -> NameChars<'a> {
-        return NameChars { bytes };
-    }
-
-    /// Writes the name to a writer, converting invalid UTF-8 to Latin1.
-    pub fn write_to<W: fmt::Write>(&self, w: &mut W) -> fmt::Result {
-        // Minimize the number of calls to write_str():
-        // Find valid sequences of UTF-8 and write them in one call.
-
-        let len = self.bytes.len();
-        let mut last_flush = 0;
-        let mut pos = 0;
-        while pos < len {
-            // If this is valid UTF-8, update pos and continue to next iteration.
-            // If this is not valid UTF-8, fall-through to the Latin1 case.
-            let b0 = self.bytes[pos];
-
-            if b0 <= 0x7F {
-                // 0x00..0x7F: Valid UTF-8. Continue.
-                pos += 1;
-                continue;
-            } else if b0 <= 0xBF {
-                // Invalid lead byte. Fall-through.
-            } else if b0 <= 0xDF {
-                if len - pos >= 2 {
-                    let b1 = self.bytes[pos + 1];
-                    if 0x80 == (b1 & 0xC0) {
-                        let ch = ((b0 & 0x1F) as u32) << 6 | ((b1 & 0x3F) as u32);
-                        if 0x80 <= ch {
-                            // Valid 2-byte UTF-8. Continue.
-                            pos += 2;
-                            continue;
-                        }
-                    }
-                }
-            } else if b0 <= 0xEF {
-                if len - pos >= 3 {
-                    let b1 = self.bytes[pos + 1];
-                    let b2 = self.bytes[pos + 2];
-                    if 0x80 == (b1 & 0xC0) && 0x80 == (b2 & 0xC0) {
-                        let ch = ((b0 & 0x0F) as u32) << 12
-                            | ((b1 & 0x3F) as u32) << 6
-                            | ((b2 & 0x3F) as u32);
-                        if 0x800 <= ch {
-                            // Valid 3-byte UTF-8. Continue.
-                            pos += 3;
-                            continue;
-                        }
-                    }
-                }
-            } else if b0 <= 0xF4 {
-                #[allow(clippy::collapsible_if)] // The symmetry seems helpful.
-                if len - pos >= 4 {
-                    let b1 = self.bytes[pos + 1];
-                    let b2 = self.bytes[pos + 2];
-                    let b3 = self.bytes[pos + 3];
-                    if 0x80 == (b1 & 0xC0) && 0x80 == (b2 & 0xC0) && 0x80 == (b3 & 0xC0) {
-                        let ch = ((b0 & 0x07) as u32) << 18
-                            | ((b1 & 0x3F) as u32) << 12
-                            | ((b2 & 0x3F) as u32) << 6
-                            | ((b3 & 0x3F) as u32);
-                        if (0x10000..=0x10FFFF).contains(&ch) {
-                            // Valid 4-byte UTF-8. Continue.
-                            pos += 4;
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            // Invalid UTF-8 byte b0.
-            // Flush the valid UTF-8, if any.
-
-            if last_flush < pos {
-                w.write_str(unsafe { str::from_utf8_unchecked(&self.bytes[last_flush..pos]) })?;
-            }
-
-            // Treat b0 as Latin1.
-            w.write_char(b0 as char)?;
-            pos += 1;
-            last_flush = pos;
-        }
-
-        if last_flush < pos {
-            w.write_str(unsafe { str::from_utf8_unchecked(&self.bytes[last_flush..pos]) })?;
-        }
-
-        return Ok(());
-    }
-}
-
-impl<'a> Iterator for NameChars<'a> {
-    type Item = char;
-
-    fn next(&mut self) -> Option<char> {
-        let len = self.bytes.len();
-        if len == 0 {
-            return None;
-        }
-
-        let b0 = self.bytes[0];
-        if b0 <= 0xBF {
-            // 0x00..0x7F: ASCII - pass through.
-            // 0x80..0xBF: Invalid lead byte - pass through.
-        } else if len > 1 {
-            let b1 = self.bytes[1];
-            if (b1 & 0xC0) != 0x80 {
-                // Invalid trail byte - pass through.
-            } else if b0 <= 0xDF {
-                let ch = ((b0 & 0x1F) as u32) << 6 | ((b1 & 0x3F) as u32);
-                if 0x80 <= ch {
-                    // Valid 2-byte UTF-8.
-                    self.bytes = &self.bytes[2..];
-                    return Some(unsafe { char::from_u32_unchecked(ch) });
-                }
-            } else if len > 2 {
-                let b2 = self.bytes[2];
-                if (b2 & 0xC0) != 0x80 {
-                    // Invalid trail byte - pass through.
-                } else if b0 <= 0xEF {
-                    let ch = ((b0 & 0x0F) as u32) << 12
-                        | ((b1 & 0x3F) as u32) << 6
-                        | ((b2 & 0x3F) as u32);
-                    if 0x800 <= ch {
-                        // Valid 3-byte UTF-8.
-                        self.bytes = &self.bytes[3..];
-                        return Some(unsafe { char::from_u32_unchecked(ch) });
-                    }
-                } else if len > 3 {
-                    let b3 = self.bytes[3];
-                    if (b3 & 0xC0) != 0x80 {
-                        // Invalid trail byte - pass through.
-                    } else if b0 <= 0xF4 {
-                        let ch = ((b0 & 0x07) as u32) << 18
-                            | ((b1 & 0x3F) as u32) << 12
-                            | ((b2 & 0x3F) as u32) << 6
-                            | ((b3 & 0x3F) as u32);
-                        if (0x10000..=0x10FFFF).contains(&ch) {
-                            // Valid 4-byte UTF-8.
-                            self.bytes = &self.bytes[4..];
-                            return Some(unsafe { char::from_u32_unchecked(ch) });
-                        }
-                    }
-                }
-            }
-        }
-
-        // Pass through: treat b0 as Latin1.
-        self.bytes = &self.bytes[1..];
-        return Some(b0 as char);
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.bytes.len();
-        return (len / 4, Some(len));
-    }
-}
-
-impl<'a> iter::FusedIterator for NameChars<'a> {}
-
-impl<'a> fmt::Display for NameChars<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
-        return self.write_to(f);
-    }
-}
+pub type NameChars<'dat> = _internal::CharsFromUtf8WithLatin1Fallback<'dat>;
 
 /// Values for the `last_error()` property of [`EventHeaderEnumerator`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -659,13 +487,13 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     /// Resets the `move_next` limit to `MOVE_NEXT_LIMIT_DEFAULT`.
     pub fn reset(&mut self) {
         self.context
-            .reset(EventHeaderEnumeratorContext::MOVE_NEXT_LIMIT_DEFAULT);
+            .reset_impl(EventHeaderEnumeratorContext::MOVE_NEXT_LIMIT_DEFAULT);
     }
 
     /// Positions the enumerator before the first item.
     /// Resets the `move_next` limit to the specified value.
     pub fn reset_with_limit(&mut self, move_next_limit: u32) {
-        self.context.reset(move_next_limit);
+        self.context.reset_impl(move_next_limit);
     }
 
     /// Moves the enumerator to the next item in the current event, or to the end
@@ -680,7 +508,7 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     ///
     /// Check `last_error()` for details.
     pub fn move_next(&mut self) -> bool {
-        return self.context.move_next(self.event_data);
+        return self.context.move_next_impl(self.event_data);
     }
 
     /// Moves the enumerator to the next sibling of the current item, or to the end
@@ -699,7 +527,7 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     ///
     /// Check `last_error()` for details.
     pub fn move_next_sibling(&mut self) -> bool {
-        return self.context.move_next_sibling(self.event_data);
+        return self.context.move_next_sibling_impl(self.event_data);
     }
 
     /// Advanced scenarios. This method is for extracting type information from an
@@ -729,7 +557,7 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     ///
     /// Typically called in a loop until it returns false.
     pub fn move_next_metadata(&mut self) -> bool {
-        return self.context.move_next_metadata(self.event_data);
+        return self.context.move_next_metadata_impl(self.event_data);
     }
 }
 
@@ -1026,7 +854,7 @@ impl EventHeaderEnumeratorContext {
 
         self.event_name_len = (name_pos - self.meta_start as usize) as u16;
         self.data_start = event_pos as u32;
-        self.reset(move_next_limit);
+        self.reset_impl(move_next_limit);
         return Ok(EventHeaderEnumerator {
             context: self,
             event_data,
@@ -1034,7 +862,7 @@ impl EventHeaderEnumeratorContext {
         });
     }
 
-    fn reset(&mut self, move_next_limit: u32) {
+    fn reset_impl(&mut self, move_next_limit: u32) {
         self.data_pos_raw = self.data_start;
         self.move_next_remaining = move_next_limit;
         self.stack_top.next_offset = self.meta_start + self.event_name_len as u32 + 1;
@@ -1047,7 +875,7 @@ impl EventHeaderEnumeratorContext {
         self.last_error = EventHeaderEnumeratorError::Success;
     }
 
-    fn move_next(&mut self, event_data: &[u8]) -> bool {
+    fn move_next_impl(&mut self, event_data: &[u8]) -> bool {
         debug_assert!(self.state.can_move_next());
 
         if self.move_next_remaining == 0 {
@@ -1064,7 +892,7 @@ impl EventHeaderEnumeratorContext {
             }
             SubState::ValueScalar => {
                 debug_assert!(self.state == EventHeaderEnumeratorState::Value);
-                debug_assert!(self.field_type.encoding.base_encoding() != FieldEncoding::Struct);
+                debug_assert!(self.field_type.encoding.without_flags() != FieldEncoding::Struct);
                 debug_assert!(!self.field_type.encoding.is_array());
                 debug_assert!(event_data.len() as u32 - self.data_pos_raw >= self.item_size_raw);
 
@@ -1073,7 +901,7 @@ impl EventHeaderEnumeratorContext {
             }
             SubState::ValueSimpleArrayElement => {
                 debug_assert!(self.state == EventHeaderEnumeratorState::Value);
-                debug_assert!(self.field_type.encoding.base_encoding() != FieldEncoding::Struct);
+                debug_assert!(self.field_type.encoding.without_flags() != FieldEncoding::Struct);
                 debug_assert!(self.field_type.encoding.is_array());
                 debug_assert!(self.stack_top.array_index < self.stack_top.array_count);
                 debug_assert!(self.element_size != 0); // Eligible for fast path.
@@ -1094,7 +922,7 @@ impl EventHeaderEnumeratorContext {
             }
             SubState::ValueComplexArrayElement => {
                 debug_assert!(self.state == EventHeaderEnumeratorState::Value);
-                debug_assert!(self.field_type.encoding.base_encoding() != FieldEncoding::Struct);
+                debug_assert!(self.field_type.encoding.without_flags() != FieldEncoding::Struct);
                 debug_assert!(self.field_type.encoding.is_array());
                 debug_assert!(self.stack_top.array_index < self.stack_top.array_count);
                 debug_assert!(self.element_size == 0); // Not eligible for fast path.
@@ -1124,7 +952,7 @@ impl EventHeaderEnumeratorContext {
                 } else if self.element_size != 0 {
                     // First element of simple array.
                     debug_assert!(
-                        self.field_type.encoding.base_encoding() != FieldEncoding::Struct
+                        self.field_type.encoding.without_flags() != FieldEncoding::Struct
                     );
                     self.item_size_cooked = self.element_size as u32;
                     self.item_size_raw = self.element_size as u32;
@@ -1134,7 +962,7 @@ impl EventHeaderEnumeratorContext {
                     );
                     self.start_value_simple();
                     moved_to_item = true;
-                } else if self.field_type.encoding.base_encoding() != FieldEncoding::Struct {
+                } else if self.field_type.encoding.without_flags() != FieldEncoding::Struct {
                     // First element of complex array.
                     self.set_state(
                         EventHeaderEnumeratorState::Value,
@@ -1155,7 +983,7 @@ impl EventHeaderEnumeratorContext {
                 // 0-length array of struct means we won't naturally traverse
                 // the child struct's metadata. Since self.stackTop.NextOffset
                 // won't get updated naturally, we need to update it manually.
-                if self.field_type.encoding.base_encoding() == FieldEncoding::Struct
+                if self.field_type.encoding.without_flags() == FieldEncoding::Struct
                     && self.stack_top.array_count == 0
                     && !self.skip_struct_metadata(event_data)
                 {
@@ -1179,7 +1007,7 @@ impl EventHeaderEnumeratorContext {
             }
             SubState::StructEnd => {
                 debug_assert!(self.state == EventHeaderEnumeratorState::StructEnd);
-                debug_assert!(self.field_type.encoding.base_encoding() == FieldEncoding::Struct);
+                debug_assert!(self.field_type.encoding.without_flags() == FieldEncoding::Struct);
                 debug_assert!(self.item_size_raw == 0);
 
                 self.stack_top.array_index += 1;
@@ -1209,9 +1037,9 @@ impl EventHeaderEnumeratorContext {
         return moved_to_item;
     }
 
-    fn move_next_sibling(&mut self, event_data: &[u8]) -> bool {
+    fn move_next_sibling_impl(&mut self, event_data: &[u8]) -> bool {
         debug_assert!(self.state.can_move_next());
-        let mut moved_to_item;
+
         let mut depth = 0; // May reach -1 if we start on ArrayEnd/StructEnd.
         loop {
             match self.state {
@@ -1229,30 +1057,33 @@ impl EventHeaderEnumeratorContext {
                         // Array of simple elements - jump directly to next sibling.
                         debug_assert!(matches!(self.substate, SubState::ArrayBegin));
                         debug_assert!(
-                            self.field_type.encoding.base_encoding() != FieldEncoding::Struct
+                            self.field_type.encoding.without_flags() != FieldEncoding::Struct
                         );
                         debug_assert!(self.field_type.encoding.is_array());
                         debug_assert!(self.stack_top.array_index == 0);
                         self.data_pos_raw +=
                             self.stack_top.array_count as u32 * self.element_size as u32;
                         self.move_next_remaining -= 1;
-                        self.next_property(event_data);
+
+                        let moved_to_item = self.next_property(event_data);
+                        if !moved_to_item || depth <= 0 {
+                            return moved_to_item;
+                        }
+
                         continue; // Skip MoveNext().
                     }
                 }
                 _ => {} // Same as MoveNext.
             }
 
-            moved_to_item = self.move_next(event_data);
+            let moved_to_item = self.move_next_impl(event_data);
             if !moved_to_item || depth <= 0 {
-                break;
+                return moved_to_item;
             }
         }
-
-        return moved_to_item;
     }
 
-    fn move_next_metadata(&mut self, event_data: &[u8]) -> bool {
+    fn move_next_metadata_impl(&mut self, event_data: &[u8]) -> bool {
         if !matches!(self.substate, SubState::ValueMetadata) {
             debug_assert!(self.state == EventHeaderEnumeratorState::BeforeFirstItem);
             debug_assert!(matches!(self.substate, SubState::BeforeFirstItem));
@@ -1275,7 +1106,7 @@ impl EventHeaderEnumeratorContext {
             self.field_type = self.read_field_name_and_type(event_data);
             if self.field_type.encoding == Self::READ_FIELD_ERROR {
                 moved_to_item = self.set_error_state(EventHeaderEnumeratorError::InvalidData);
-            } else if FieldEncoding::Struct == self.field_type.encoding.base_encoding()
+            } else if FieldEncoding::Struct == self.field_type.encoding.without_flags()
                 && self.field_type.format == FieldFormat::Default
             {
                 // Struct must have at least 1 field (potential for DoS).
@@ -1333,7 +1164,7 @@ impl EventHeaderEnumeratorContext {
     }
 
     fn skip_struct_metadata(&mut self, event_data: &[u8]) -> bool {
-        debug_assert!(self.field_type.encoding.base_encoding() == FieldEncoding::Struct);
+        debug_assert!(self.field_type.encoding.without_flags() == FieldEncoding::Struct);
 
         let ok;
         let mut remaining_field_count = self.field_type.format.as_int();
@@ -1355,7 +1186,7 @@ impl EventHeaderEnumeratorContext {
                 break;
             }
 
-            if FieldEncoding::Struct == typ.encoding.base_encoding() {
+            if FieldEncoding::Struct == typ.encoding.without_flags() {
                 remaining_field_count += typ.format.as_int();
             }
 
@@ -1468,7 +1299,7 @@ impl EventHeaderEnumeratorContext {
                 event_data,
                 self.stack_top.name_offset + self.stack_top.name_len as u32 + 1,
             );
-            debug_assert!(FieldEncoding::Struct == self.field_type.encoding.base_encoding());
+            debug_assert!(FieldEncoding::Struct == self.field_type.encoding.without_flags());
             self.element_size = 0;
 
             // Unless parent is in the middle of an array, we need to set the
@@ -1547,8 +1378,8 @@ impl EventHeaderEnumeratorContext {
 
         self.stack_top.next_offset = pos;
         return FieldType {
-            encoding: encoding.base_encoding(),
-            format: format.base_encoding(),
+            encoding: encoding.without_chain_flag(),
+            format: format.without_flags(),
             tag,
         };
     }
@@ -1562,7 +1393,7 @@ impl EventHeaderEnumeratorContext {
         self.set_state(EventHeaderEnumeratorState::ArrayBegin, SubState::ArrayBegin);
 
         // Determine the m_elementSize value.
-        match self.field_type.encoding.base_encoding() {
+        match self.field_type.encoding.without_flags() {
             FieldEncoding::Struct => return true,
 
             FieldEncoding::Value8 => {
@@ -1614,7 +1445,7 @@ impl EventHeaderEnumeratorContext {
     }
 
     fn start_struct(&mut self) {
-        debug_assert!(self.field_type.encoding.base_encoding() == FieldEncoding::Struct);
+        debug_assert!(self.field_type.encoding.without_flags() == FieldEncoding::Struct);
         self.element_size = 0;
         self.item_size_raw = 0;
         self.data_pos_cooked = self.data_pos_raw;
@@ -1635,12 +1466,12 @@ impl EventHeaderEnumeratorContext {
                     event_data[(self.stack_top.name_offset + self.stack_top.name_len as u32 + 1)
                         as usize]
                 )
-                .base_encoding()
+                .without_chain_flag()
         );
         self.data_pos_cooked = self.data_pos_raw;
         self.element_size = 0;
 
-        match self.field_type.encoding.base_encoding() {
+        match self.field_type.encoding.without_flags() {
             FieldEncoding::Value8 => return self.start_value_fixed_length(event_data, 1),
             FieldEncoding::Value16 => return self.start_value_fixed_length(event_data, 2),
             FieldEncoding::Value32 => return self.start_value_fixed_length(event_data, 4),
@@ -1655,7 +1486,7 @@ impl EventHeaderEnumeratorContext {
             FieldEncoding::StringLength16Char32 => self.start_value_string(event_data, 2),
 
             _ => {
-                debug_assert!(self.field_type.encoding.base_encoding() != FieldEncoding::Struct);
+                debug_assert!(self.field_type.encoding.without_flags() != FieldEncoding::Struct);
                 self.item_size_cooked = 0;
                 self.item_size_raw = 0;
                 return self.set_error_state(EventHeaderEnumeratorError::InvalidData);
@@ -1674,7 +1505,7 @@ impl EventHeaderEnumeratorContext {
     fn start_value_simple(&mut self) {
         debug_assert!(self.stack_top.array_index < self.stack_top.array_count);
         debug_assert!(self.field_type.encoding.is_array());
-        debug_assert!(self.field_type.encoding.base_encoding() != FieldEncoding::Struct);
+        debug_assert!(self.field_type.encoding.without_flags() != FieldEncoding::Struct);
         debug_assert!(self.element_size != 0);
         debug_assert!(self.item_size_cooked == self.element_size as u32);
         debug_assert!(self.item_size_raw == self.element_size as u32);

@@ -216,8 +216,13 @@ impl FieldEncoding {
     }
 
     /// Returns the encoding without any flags (encoding & ValueMask).
-    pub const fn base_encoding(self) -> FieldEncoding {
+    pub const fn without_flags(self) -> FieldEncoding {
         return Self(self.0 & Self::ValueMask);
+    }
+
+    /// Returns the encoding without the chain flags (encoding & !ChainFlag).
+    pub const fn without_chain_flag(self) -> FieldEncoding {
+        return Self(self.0 & !Self::ChainFlag);
     }
 
     /// Returns the array flags of the encoding (encoding & (CArrayFlag | VArrayFlag)).
@@ -382,7 +387,7 @@ impl FieldFormat {
     }
 
     /// Returns the encoding without any flags (format & ValueMask).
-    pub const fn base_encoding(self) -> FieldFormat {
+    pub const fn without_flags(self) -> FieldFormat {
         return Self(self.0 & Self::ValueMask);
     }
 

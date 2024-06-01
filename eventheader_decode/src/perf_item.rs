@@ -4,10 +4,65 @@
 use crate::PerfByteReader;
 use eventheader_types::*;
 
+use core::array;
+use core::fmt;
+use core::net;
+
+use crate::_internal as internal;
+
 /// Flags used when formatting a value as a string.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PerfConvertOptions(u32);
+
+/// Encoding of a string field of an event.
+pub enum PerfTextEncoding {
+    /// Corresponds to [`FieldFormat::String8`], i.e. "unspecified single-byte character set",
+    /// generally decoded as Latin1 (ISO-8859-1) or Windows-1252.
+    Latin1,
+
+    /// UTF-8 string.
+    Utf8,
+
+    /// UTF-16 string, big-endian byte order.
+    Utf16BE,
+
+    /// UTF-16 string, little-endian byte order.
+    Utf16LE,
+
+    /// UTF-32 string, big-endian byte order.
+    Utf32BE,
+
+    /// UTF-32 string, little-endian byte order.
+    Utf32LE,
+}
+
+impl PerfTextEncoding {
+    /// Returns `(Option<PerfTextEncoding>, bom_size)` corresponding to the BOM at the start of
+    /// the given bytes. If no BOM is present, returns `(None, 0)`.
+    pub fn from_bom(bytes: &[u8]) -> (Option<Self>, u8) {
+        let len = bytes.len();
+        if len >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF
+        {
+            return (Some(Self::Utf32BE), 4);
+        } else if len >= 4
+            && bytes[0] == 0xFF
+            && bytes[1] == 0xFE
+            && bytes[2] == 0x00
+            && bytes[3] == 0x00
+        {
+            return (Some(Self::Utf32LE), 4);
+        } else if len >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
+            return (Some(Self::Utf16BE), 2);
+        } else if len >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
+            return (Some(Self::Utf16LE), 2);
+        } else if len >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF {
+            return (Some(Self::Utf8), 3);
+        } else {
+            return (None, 0);
+        }
+    }
+}
 
 #[allow(non_upper_case_globals)]
 impl PerfConvertOptions {
@@ -232,7 +287,7 @@ impl PerfItemMetadata {
 
         #[cfg(debug_assertions)]
         if matches!(
-            encoding_and_array_flag.base_encoding(),
+            encoding_and_array_flag.without_flags(),
             FieldEncoding::Struct
         ) {
             debug_assert!(type_size == 0); // Structs are not simple types.
@@ -280,7 +335,7 @@ impl PerfItemMetadata {
     /// the specified format is `Default` (0), unrecognized, or unsupported. The value
     /// returned by this property does not include any flags.
     pub const fn encoding(&self) -> FieldEncoding {
-        self.encoding_and_array_flag_and_is_scalar.base_encoding()
+        self.encoding_and_array_flag_and_is_scalar.without_flags()
     }
 
     /// Returns the field's `CArrayFlag` or `VArrayFlag` if the item represents an array-begin
@@ -403,16 +458,16 @@ impl PerfItemMetadata {
 ///   `Bytes` will be empty. Use [`EventHeaderEnumerator`]`.MoveNext()`
 ///   to visit the array elements.
 #[derive(Clone, Copy, Debug)]
-pub struct PerfItemValue<'a> {
-    bytes: &'a [u8],
+pub struct PerfItemValue<'dat> {
+    bytes: &'dat [u8],
     metadata: PerfItemMetadata,
 }
 
-impl<'a> PerfItemValue<'a> {
+impl<'dat> PerfItemValue<'dat> {
     /// Initializes a new instance of the `PerfItemValue` struct.
     /// These are not normally created directly. You'll normally get instances of this struct from
     /// [`EventHeaderEnumerator`]`.item_info()`.
-    pub const fn new(bytes: &'a [u8], metadata: PerfItemMetadata) -> Self {
+    pub const fn new(bytes: &'dat [u8], metadata: PerfItemMetadata) -> Self {
         #[cfg(debug_assertions)]
         if metadata.type_size != 0 && !bytes.is_empty() {
             debug_assert!(
@@ -432,7 +487,7 @@ impl<'a> PerfItemValue<'a> {
     /// This may be empty for a complex item such as a struct, or an array
     /// of variable-size elements, in which case you must access the individual
     /// sub-items using the event's enumerator.
-    pub fn bytes(&self) -> &'a [u8] {
+    pub fn bytes(&self) -> &'dat [u8] {
         self.bytes
     }
 
@@ -451,5 +506,812 @@ impl<'a> PerfItemValue<'a> {
     /// This is the same as `self.byte_reader().source_big_endian()`.
     pub fn source_big_endian(&self) -> bool {
         self.metadata.source_big_endian()
+    }
+
+    /// For [`FieldEncoding::Value8`]: gets a 1-byte array starting at offset `index * 1`.
+    pub fn to_u8x1(&self, index: usize) -> &'dat [u8; 1] {
+        array::from_ref(&self.bytes[index])
+    }
+
+    /// For [`FieldEncoding::Value16`]: gets a 2-byte array starting at offset `index * 2`.
+    pub fn to_u8x2(&self, index: usize) -> &'dat [u8; 2] {
+        const SIZE: usize = 2;
+        self.bytes[index * SIZE..index * SIZE + SIZE]
+            .try_into()
+            .unwrap()
+    }
+
+    /// For [`FieldEncoding::Value32`]: gets a 4-byte array starting at offset `index * 4`.
+    pub fn to_u8x4(&self, index: usize) -> &'dat [u8; 4] {
+        const SIZE: usize = 4;
+        self.bytes[index * SIZE..index * SIZE + SIZE]
+            .try_into()
+            .unwrap()
+    }
+
+    /// For [`FieldEncoding::Value64`]: gets a 8-byte array starting at offset `index * 8`.
+    pub fn to_u8x8(&self, index: usize) -> &'dat [u8; 8] {
+        const SIZE: usize = 8;
+        self.bytes[index * SIZE..index * SIZE + SIZE]
+            .try_into()
+            .unwrap()
+    }
+
+    /// For [`FieldEncoding::Value128`]: gets a 16-byte array starting at offset `index * 16`.
+    pub fn to_u8x16(&self, index: usize) -> &'dat [u8; 16] {
+        const SIZE: usize = 16;
+        self.bytes[index * SIZE..index * SIZE + SIZE]
+            .try_into()
+            .unwrap()
+    }
+
+    /// For [`FieldEncoding::Value8`]: gets a `u8` value starting at offset `index * 1`.
+    pub fn to_u8(&self, index: usize) -> u8 {
+        self.bytes[index]
+    }
+
+    /// For [`FieldEncoding::Value8`]: gets an `i8` value starting at offset `index * 1`.
+    pub fn to_i8(&self, index: usize) -> i8 {
+        self.bytes[index] as i8
+    }
+
+    /// For [`FieldEncoding::Value16`]: gets a `u16` value starting at offset `index * 2`.
+    pub fn to_u16(&self, index: usize) -> u16 {
+        self.metadata.byte_reader.read_u16(&self.bytes[index * 2..])
+    }
+
+    /// For [`FieldEncoding::Value16`]: gets an `i16` value starting at offset `index * 2`.
+    pub fn to_i16(&self, index: usize) -> i16 {
+        self.metadata.byte_reader.read_i16(&self.bytes[index * 2..])
+    }
+
+    /// For [`FieldEncoding::Value32`]: gets a `u32` value starting at offset `index * 4`.
+    pub fn to_u32(&self, index: usize) -> u32 {
+        self.metadata.byte_reader.read_u32(&self.bytes[index * 4..])
+    }
+
+    /// For [`FieldEncoding::Value32`]: gets an `i32` value starting at offset `index * 4`.
+    pub fn to_i32(&self, index: usize) -> i32 {
+        self.metadata.byte_reader.read_i32(&self.bytes[index * 4..])
+    }
+
+    /// For [`FieldEncoding::Value64`]: gets a `u64` value starting at offset `index * 8`.
+    pub fn to_u64(&self, index: usize) -> u64 {
+        self.metadata.byte_reader.read_u64(&self.bytes[index * 8..])
+    }
+
+    /// For [`FieldEncoding::Value64`]: gets an `i64` value starting at offset `index * 8`.
+    pub fn to_i64(&self, index: usize) -> i64 {
+        self.metadata.byte_reader.read_i64(&self.bytes[index * 8..])
+    }
+
+    /// For [`FieldEncoding::Value32`]: gets an `f32` value starting at offset `index * 4`.
+    pub fn to_f32(&self, index: usize) -> f32 {
+        self.metadata.byte_reader.read_f32(&self.bytes[index * 4..])
+    }
+
+    /// For [`FieldEncoding::Value64`]: gets an `f64` value starting at offset `index * 8`.
+    pub fn to_f64(&self, index: usize) -> f64 {
+        self.metadata.byte_reader.read_f64(&self.bytes[index * 8..])
+    }
+
+    /// For [`FieldEncoding::Value128`]: gets a big-endian [`Guid`] value starting at offset `index * 16`.
+    pub fn to_guid(&self, index: usize) -> Guid {
+        const SIZE: usize = 16;
+        Guid::from_bytes_be(
+            &self.bytes[index * SIZE..index * SIZE + SIZE]
+                .try_into()
+                .unwrap(),
+        )
+    }
+
+    /// For [`FieldEncoding::Value16`]: gets a big-endian `u16` value starting at offset `index * 2`.
+    pub fn to_port(&self, index: usize) -> u16 {
+        const SIZE: usize = 2;
+        u16::from_be_bytes(
+            self.bytes[index * SIZE..index * SIZE + SIZE]
+                .try_into()
+                .unwrap(),
+        )
+    }
+
+    /// For [`FieldEncoding::Value32`]: gets an [`net::Ipv4Addr`] value starting at offset `index * 4`.
+    pub fn to_ipv4(&self, index: usize) -> net::Ipv4Addr {
+        const SIZE: usize = 4;
+        let bits: [u8; SIZE] = self.bytes[index * SIZE..index * SIZE + SIZE]
+            .try_into()
+            .unwrap();
+        net::Ipv4Addr::new(bits[0], bits[1], bits[2], bits[3])
+    }
+
+    /// For [`FieldEncoding::Value128`]: gets an [`net::Ipv6Addr`] value starting at offset `index * 16`.
+    pub fn to_ipv6(&self, index: usize) -> net::Ipv6Addr {
+        const SIZE: usize = 16;
+        let bits: &[u8; SIZE] = self.bytes[index * SIZE..index * SIZE + SIZE]
+            .try_into()
+            .unwrap();
+        net::Ipv6Addr::new(
+            u16::from_be_bytes(bits[0..2].try_into().unwrap()),
+            u16::from_be_bytes(bits[2..4].try_into().unwrap()),
+            u16::from_be_bytes(bits[4..6].try_into().unwrap()),
+            u16::from_be_bytes(bits[6..8].try_into().unwrap()),
+            u16::from_be_bytes(bits[8..10].try_into().unwrap()),
+            u16::from_be_bytes(bits[10..12].try_into().unwrap()),
+            u16::from_be_bytes(bits[12..14].try_into().unwrap()),
+            u16::from_be_bytes(bits[14..16].try_into().unwrap()),
+        )
+    }
+
+    /// For [`FieldEncoding::Value32`]: gets an `i32` value starting at offset `index * 4`.
+    pub fn to_time32(&self, index: usize) -> i32 {
+        self.metadata.byte_reader.read_i32(&self.bytes[index * 4..])
+    }
+
+    /// For [`FieldEncoding::Value64`]: gets an `i64` value starting at offset `index * 8`.
+    pub fn to_time64(&self, index: usize) -> i64 {
+        self.metadata.byte_reader.read_i64(&self.bytes[index * 8..])
+    }
+
+    /// Interprets the value as a string and returns the string's encoded bytes along
+    /// with the encoding to use to convert the bytes to a string. The encoding is
+    /// determined based on the field's `format`, `encoding`, and a BOM (if present) in
+    /// the value bytes. If a BOM was detected, the returned encoded bytes will NOT
+    /// include the BOM.
+    pub fn to_string_bytes(&self) -> (&'dat [u8], PerfTextEncoding) {
+        // First, check `format` for non-UTF and UTF-with-BOM cases.
+        match self.metadata.format {
+            FieldFormat::String8 => return (self.bytes, PerfTextEncoding::Latin1),
+            FieldFormat::StringUtfBom | FieldFormat::StringXml | FieldFormat::StringJson => {
+                let from_bom = PerfTextEncoding::from_bom(self.bytes);
+                if let Some(enc) = from_bom.0 {
+                    return (&self.bytes[from_bom.1 as usize..], enc);
+                }
+            }
+            _ => {}
+        }
+
+        // No BOM but assumed to be UTF. Determine text encoding from element size.
+        let enc = match self.metadata.encoding() {
+            FieldEncoding::Value8
+            | FieldEncoding::ZStringChar8
+            | FieldEncoding::StringLength16Char8 => PerfTextEncoding::Utf8,
+
+            FieldEncoding::Value16
+            | FieldEncoding::ZStringChar16
+            | FieldEncoding::StringLength16Char16 => {
+                if self.metadata.source_big_endian() {
+                    PerfTextEncoding::Utf16BE
+                } else {
+                    PerfTextEncoding::Utf16LE
+                }
+            }
+
+            FieldEncoding::Value32
+            | FieldEncoding::ZStringChar32
+            | FieldEncoding::StringLength16Char32 => {
+                if self.metadata.source_big_endian() {
+                    PerfTextEncoding::Utf32BE
+                } else {
+                    PerfTextEncoding::Utf32LE
+                }
+            }
+
+            // Invalid, Struct, Value64, Value128: probably garbage, but decode as Latin1.
+            _ => PerfTextEncoding::Latin1,
+        };
+
+        return (self.bytes, enc);
+    }
+
+    /// Interprets the value as an encoded string. Decodes the string using the detected
+    /// encoding and writes the decoded string to the provided writer. The encoding is
+    /// determined based on the field's `format`, `encoding`, and a BOM (if present) in
+    /// the value bytes. The BOM (if present) will NOT be written to the writer.
+    ///
+    /// - For UTF-8, invalid UTF-8 byte sequences will be treated as Latin-1 sequences.
+    /// - For UTF-16 and UTF-32, invalid code units will be replaced with the Unicode
+    ///   replacement character (U+FFFD).
+    pub fn write_string_to<W: fmt::Write>(&self, writer: &mut W) -> fmt::Result {
+        let (bytes, enc) = self.to_string_bytes();
+        return match enc {
+            PerfTextEncoding::Latin1 => internal::CharsFromLatin1::new(bytes).write_to(writer),
+            PerfTextEncoding::Utf8 => {
+                internal::CharsFromUtf8WithLatin1Fallback::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf16BE => internal::CharsFromUtf16BE::new(bytes).write_to(writer),
+            PerfTextEncoding::Utf16LE => internal::CharsFromUtf16LE::new(bytes).write_to(writer),
+            PerfTextEncoding::Utf32BE => internal::CharsFromUtf32BE::new(bytes).write_to(writer),
+            PerfTextEncoding::Utf32LE => internal::CharsFromUtf32LE::new(bytes).write_to(writer),
+        };
+    }
+
+    /// Writes a string representation of this value to the writer.
+    ///
+    /// If this value is a scalar, this behaves like `write_scalar_to`.
+    ///
+    /// If thie value is an array, this behaves like `write_simple_array_to`.
+    pub fn write_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+    ) -> fmt::Result {
+        if self.metadata.is_scalar() {
+            return self.write_scalar_to(writer, convert_options);
+        } else {
+            return self.write_simple_array_to(writer, convert_options);
+        }
+    }
+
+    /// Interprets this as a scalar and writes a string representation to the writer.
+    ///
+    /// For example:
+    ///
+    /// - If the value is a decimal integer or a finite float, writes a number like `123` or `-123.456`.
+    /// - If the value is a boolean, writes `false` (for 0) or `true` (for 1). For values other
+    ///   than 0 or 1, writes a string like `BOOL(-123)` if `convert_options` has
+    ///   [`PerfConvertOptions::BoolOutOfRangeAsString`], or a string like `-123` otherwise.
+    /// - If the value is a string, control characters (char values 0..31) are
+    ///   filtered based on the flags in `convert_options` (kept, replaced with space,
+    ///   or JSON-escaped).
+    /// - If the value is a struct, writes `Struct[N]`, where `N` is the number of fields in the struct.
+    pub fn write_scalar_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+    ) -> fmt::Result {
+        debug_assert!(self.metadata.type_size as usize <= self.bytes.len());
+
+        match self.metadata.encoding() {
+            FieldEncoding::Invalid => return writer.write_str("null"),
+            FieldEncoding::Struct => {
+                return write!(writer, "Struct[{}]", self.metadata.struct_field_count())
+            }
+            FieldEncoding::Value8 => return self.write_value8_to(writer, convert_options, 0),
+            FieldEncoding::Value16 => return self.write_value16_to(writer, convert_options, 0),
+            FieldEncoding::Value32 => return self.write_value32_to(writer, convert_options, 0),
+            FieldEncoding::Value64 => return self.write_value64_to(writer, convert_options, 0),
+            FieldEncoding::Value128 => return self.write_value128_to(writer, convert_options, 0),
+            FieldEncoding::ZStringChar8 | FieldEncoding::StringLength16Char8 => {
+                match self.metadata.format {
+                    FieldFormat::HexBytes => return Self::write_hexbytes_to(writer, self.bytes),
+                    FieldFormat::String8 => {
+                        return Self::write_latin1_with_control_chars_to(
+                            writer,
+                            convert_options,
+                            self.bytes,
+                        )
+                    }
+                    FieldFormat::StringUtfBom
+                    | FieldFormat::StringXml
+                    | FieldFormat::StringJson => {
+                        if let (Some(encoding), bom_len) = PerfTextEncoding::from_bom(self.bytes) {
+                            return Self::write_string_with_control_chars_to(
+                                writer,
+                                convert_options,
+                                &self.bytes[bom_len as usize..],
+                                encoding,
+                            );
+                        } else {
+                            return Self::write_string_with_control_chars_to(
+                                writer,
+                                convert_options,
+                                self.bytes,
+                                PerfTextEncoding::Utf8,
+                            );
+                        }
+                    }
+                    _ => {
+                        return Self::write_string_with_control_chars_to(
+                            writer,
+                            convert_options,
+                            self.bytes,
+                            PerfTextEncoding::Utf8,
+                        );
+                    }
+                }
+            }
+            _ => return write!(writer, "Encoding[{}]", self.metadata.encoding()),
+        };
+    }
+
+    /// Interprets this as the beginning of an array of simple type.
+    /// Converts the specified element of the array to a string and writes it to the writer.
+    ///
+    /// Requires `type_size != 0` (can only format fixed-length types).
+    ///
+    /// Requires `index <= bytes.len() / type_size`.
+    ///
+    /// The element is formatted as described for `write_scalar_to`.
+    pub fn write_simple_element_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        index: usize,
+        convert_options: PerfConvertOptions,
+    ) -> fmt::Result {
+        debug_assert!(self.metadata.type_size != 0);
+        debug_assert!(index <= 65535);
+        debug_assert!((index + 1) * self.metadata.type_size as usize <= self.bytes.len());
+
+        match self.metadata.encoding() {
+            FieldEncoding::Value8 => return self.write_value8_to(writer, convert_options, index),
+            FieldEncoding::Value16 => return self.write_value16_to(writer, convert_options, index),
+            FieldEncoding::Value32 => return self.write_value32_to(writer, convert_options, index),
+            FieldEncoding::Value64 => return self.write_value64_to(writer, convert_options, index),
+            FieldEncoding::Value128 => {
+                return self.write_value128_to(writer, convert_options, index)
+            }
+            _ => return write!(writer, "Encoding[{}]", self.metadata.encoding()),
+        }
+    }
+
+    /// Interprets this as the beginning of an array of simple type.
+    /// Converts this to a comma-separated list of items and writes it to the writer.
+    ///
+    /// Each array element is formatted as described for `write_scalar_to`.
+    ///
+    /// If this is an array-begin or array-end of complex type, this will simply write
+    /// `Array[N]`, where `N` is the number of elements in the array.
+    pub fn write_simple_array_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+    ) -> fmt::Result {
+        debug_assert!(self.metadata.type_size != 0);
+
+        let separator = if convert_options.has(PerfConvertOptions::Space) {
+            ", "
+        } else {
+            ","
+        };
+
+        match self.metadata.encoding() {
+            FieldEncoding::Value8 => {
+                let count = self.bytes.len();
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(separator)?;
+                    }
+                    self.write_value8_to(writer, convert_options, i)?;
+                }
+            }
+            FieldEncoding::Value16 => {
+                let count = self.bytes.len() / 2;
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(separator)?;
+                    }
+                    self.write_value16_to(writer, convert_options, i)?;
+                }
+            }
+            FieldEncoding::Value32 => {
+                let count = self.bytes.len() / 4;
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(separator)?;
+                    }
+                    self.write_value32_to(writer, convert_options, i)?;
+                }
+            }
+            FieldEncoding::Value64 => {
+                let count = self.bytes.len() / 8;
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(separator)?;
+                    }
+                    self.write_value64_to(writer, convert_options, i)?;
+                }
+            }
+            FieldEncoding::Value128 => {
+                let count = self.bytes.len() / 16;
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(separator)?;
+                    }
+                    self.write_value128_to(writer, convert_options, i)?;
+                }
+            }
+            _ => return write!(writer, "Encoding[{}]", self.metadata.encoding()),
+        }
+
+        return Ok(());
+    }
+
+    /// Writes a JSON representation of this value to the writer.
+    ///
+    /// If this value is a scalar, this behaves like `write_json_scalar_to`.
+    ///
+    /// If thie value is an array, this behaves like `write_json_simple_array_to`.
+    pub fn write_json_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+    ) -> fmt::Result {
+        if self.metadata.is_scalar() {
+            return self.write_json_scalar_to(writer, convert_options);
+        } else {
+            return self.write_json_simple_array_to(writer, convert_options);
+        }
+    }
+
+    /// Interprets this as a scalar and writes a JSON representation to the writer.
+    ///
+    /// If this value is a struct, the value will be written as `{}`.
+    /// Structs need to be processed by the enumerator.
+    pub fn write_json_scalar_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+    ) -> fmt::Result {
+        debug_assert!(self.metadata.type_size as usize <= self.bytes.len());
+
+        match self.metadata.encoding() {
+            FieldEncoding::Invalid => return writer.write_str("null"),
+            FieldEncoding::Struct => {
+                return writer.write_str("{}");
+            }
+            FieldEncoding::Value8 => return self.write_json_value8_to(writer, convert_options, 0),
+            FieldEncoding::Value16 => {
+                return self.write_json_value16_to(writer, convert_options, 0)
+            }
+            FieldEncoding::Value32 => {
+                return self.write_json_value32_to(writer, convert_options, 0)
+            }
+            FieldEncoding::Value64 => {
+                return self.write_json_value64_to(writer, convert_options, 0)
+            }
+            FieldEncoding::Value128 => {
+                return self.write_json_value128_to(writer, convert_options, 0)
+            }
+            FieldEncoding::ZStringChar8 | FieldEncoding::StringLength16Char8 => {
+                match self.metadata.format {
+                    FieldFormat::HexBytes => {
+                        return Self::write_json_hexbytes_to(writer, self.bytes)
+                    }
+                    FieldFormat::String8 => return Self::write_json_latin1_to(writer, self.bytes),
+                    FieldFormat::StringUtfBom
+                    | FieldFormat::StringXml
+                    | FieldFormat::StringJson => {
+                        if let (Some(encoding), bom_len) = PerfTextEncoding::from_bom(self.bytes) {
+                            return Self::write_json_string_to(
+                                writer,
+                                &self.bytes[bom_len as usize..],
+                                encoding,
+                            );
+                        } else {
+                            return Self::write_json_string_to(
+                                writer,
+                                self.bytes,
+                                PerfTextEncoding::Utf8,
+                            );
+                        }
+                    }
+                    _ => {
+                        return Self::write_json_string_to(
+                            writer,
+                            self.bytes,
+                            PerfTextEncoding::Utf8,
+                        );
+                    }
+                }
+            }
+            _ => return write!(writer, "\"Encoding[{}]\"", self.metadata.encoding()),
+        };
+    }
+
+    /// Interprets this as the beginning of an array of simple type.
+    /// Converts the specified element of the array to JSON and writes it to the writer.
+    ///
+    /// Requires `type_size != 0` (can only format fixed-length types).
+    ///
+    /// Requires `index <= bytes.len() / type_size`.
+    ///
+    /// The element is formatted as described for `write_json_scalar_to`.
+    pub fn write_json_simple_element_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        index: usize,
+        convert_options: PerfConvertOptions,
+    ) -> fmt::Result {
+        debug_assert!(self.metadata.type_size != 0);
+        debug_assert!(index <= 65535);
+        debug_assert!((index + 1) * self.metadata.type_size as usize <= self.bytes.len());
+
+        match self.metadata.encoding() {
+            FieldEncoding::Value8 => {
+                return self.write_json_value8_to(writer, convert_options, index)
+            }
+            FieldEncoding::Value16 => {
+                return self.write_json_value16_to(writer, convert_options, index)
+            }
+            FieldEncoding::Value32 => {
+                return self.write_json_value32_to(writer, convert_options, index)
+            }
+            FieldEncoding::Value64 => {
+                return self.write_json_value64_to(writer, convert_options, index)
+            }
+            FieldEncoding::Value128 => {
+                return self.write_json_value128_to(writer, convert_options, index)
+            }
+            _ => return write!(writer, "\"Encoding[{}]\"", self.metadata.encoding()),
+        }
+    }
+
+    /// Interprets this as the beginning of an array of simple type.
+    /// Converts this to a JSON array and writes it to the writer.
+    ///
+    /// Each array element is formatted as described for `write_json_scalar_to`.
+    ///
+    /// If this value is an array of complex type, the value will be written as `[]`.
+    /// Complex arrays need to be processed by the enumerator.
+    pub fn write_json_simple_array_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+    ) -> fmt::Result {
+        debug_assert!(self.metadata.type_size != 0);
+
+        let space = convert_options.has(PerfConvertOptions::Space);
+
+        writer.write_str("[")?;
+
+        match self.metadata.encoding() {
+            FieldEncoding::Value8 => {
+                let count = self.bytes.len();
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(",")?;
+                    }
+                    if space {
+                        writer.write_str(" ")?;
+                    }
+                    self.write_json_value8_to(writer, convert_options, i)?;
+                }
+            }
+            FieldEncoding::Value16 => {
+                let count = self.bytes.len() / 2;
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(",")?;
+                    }
+                    if space {
+                        writer.write_str(" ")?;
+                    }
+                    self.write_json_value16_to(writer, convert_options, i)?;
+                }
+            }
+            FieldEncoding::Value32 => {
+                let count = self.bytes.len() / 4;
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(",")?;
+                    }
+                    if space {
+                        writer.write_str(" ")?;
+                    }
+                    self.write_json_value32_to(writer, convert_options, i)?;
+                }
+            }
+            FieldEncoding::Value64 => {
+                let count = self.bytes.len() / 8;
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(",")?;
+                    }
+                    if space {
+                        writer.write_str(" ")?;
+                    }
+                    self.write_json_value64_to(writer, convert_options, i)?;
+                }
+            }
+            FieldEncoding::Value128 => {
+                let count = self.bytes.len() / 16;
+                for i in 0..count {
+                    if i > 0 {
+                        writer.write_str(",")?;
+                    }
+                    if space {
+                        writer.write_str(" ")?;
+                    }
+                    self.write_json_value128_to(writer, convert_options, i)?;
+                }
+            }
+            _ => return write!(writer, "\"Encoding[{}]\"", self.metadata.encoding()),
+        }
+
+        return if space {
+            writer.write_str(" ]")
+        } else {
+            writer.write_str("]")
+        };
+    }
+
+    fn write_value8_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{}", self.to_u8(index));
+    }
+
+    fn write_json_value8_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{}", self.to_u8(index));
+    }
+
+    fn write_value16_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{}", self.to_u16(index));
+    }
+
+    fn write_json_value16_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{}", self.to_u16(index));
+    }
+
+    fn write_value32_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{}", self.to_u32(index));
+    }
+
+    fn write_json_value32_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{}", self.to_u32(index));
+    }
+
+    fn write_value64_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{}", self.to_u64(index));
+    }
+
+    fn write_json_value64_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{}", self.to_u64(index));
+    }
+
+    fn write_value128_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{:?}", self.to_u8x16(index));
+    }
+
+    fn write_json_value128_to<W: fmt::Write>(
+        &self,
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        index: usize,
+    ) -> fmt::Result {
+        return write!(writer, "{:?}", self.to_u8x16(index));
+    }
+
+    fn write_latin1_with_control_chars_to<W: fmt::Write>(
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        bytes: &[u8],
+    ) -> fmt::Result {
+        return internal::CharsFromLatin1::new(bytes).write_to(writer);
+    }
+
+    fn write_json_latin1_to<W: fmt::Write>(writer: &mut W, bytes: &[u8]) -> fmt::Result {
+        return internal::CharsFromLatin1::new(bytes).write_to(writer);
+    }
+
+    fn write_string_with_control_chars_to<W: fmt::Write>(
+        writer: &mut W,
+        convert_options: PerfConvertOptions,
+        bytes: &[u8],
+        encoding: PerfTextEncoding,
+    ) -> fmt::Result {
+        match encoding {
+            PerfTextEncoding::Latin1 => {
+                return internal::CharsFromLatin1::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf8 => {
+                return internal::CharsFromUtf8WithLatin1Fallback::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf16BE => {
+                return internal::CharsFromUtf16BE::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf16LE => {
+                return internal::CharsFromLatin1::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf32BE => {
+                return internal::CharsFromLatin1::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf32LE => {
+                return internal::CharsFromLatin1::new(bytes).write_to(writer)
+            }
+        }
+    }
+
+    fn write_json_string_to<W: fmt::Write>(
+        writer: &mut W,
+        bytes: &[u8],
+        encoding: PerfTextEncoding,
+    ) -> fmt::Result {
+        match encoding {
+            PerfTextEncoding::Latin1 => {
+                return internal::CharsFromLatin1::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf8 => {
+                return internal::CharsFromUtf8WithLatin1Fallback::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf16BE => {
+                return internal::CharsFromUtf16BE::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf16LE => {
+                return internal::CharsFromLatin1::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf32BE => {
+                return internal::CharsFromLatin1::new(bytes).write_to(writer)
+            }
+            PerfTextEncoding::Utf32LE => {
+                return internal::CharsFromLatin1::new(bytes).write_to(writer)
+            }
+        }
+    }
+
+    fn write_hexbytes_to<W: fmt::Write>(writer: &mut W, bytes: &[u8]) -> fmt::Result {
+        if !bytes.is_empty() {
+            write!(writer, "{:02X}", bytes[0])?;
+            for b in bytes.iter().skip(1) {
+                write!(writer, " {:02X}", b)?;
+            }
+        }
+        return Ok(());
+    }
+
+    fn write_json_hexbytes_to<W: fmt::Write>(writer: &mut W, bytes: &[u8]) -> fmt::Result {
+        if !bytes.is_empty() {
+            write!(writer, "{:02X}", bytes[0])?;
+            for b in bytes.iter().skip(1) {
+                write!(writer, " {:02X}", b)?;
+            }
+        }
+        return Ok(());
+    }
+}
+
+impl fmt::Display for PerfItemValue<'_> {
+    /// Writes a string representation of this value to the formatter.
+    /// - Normal formatting is the same as `write_to` with [`PerfConvertOptions::Default`].
+    /// - Alternate formatting is the same as `write_json_to` with [`PerfConvertOptions::Default`].
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        return if f.alternate() {
+            self.write_json_to(f, PerfConvertOptions::Default)
+        } else {
+            self.write_to(f, PerfConvertOptions::Default)
+        };
     }
 }

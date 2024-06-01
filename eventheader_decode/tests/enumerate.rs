@@ -13,77 +13,21 @@ fn strnlen(bytes: &[u8]) -> usize {
     return len;
 }
 
-fn enumerate<'a>(
-    json: &mut JsonWriter<'a, String>,
-    e: &mut EventHeaderEnumerator,
-    move_next_sibling: bool,
-) -> Result<(), fmt::Error> {
-    if e.move_next() {
-        loop {
-            let ii = e.item_info();
-            let m = ii.metadata();
-            match e.state() {
-                EventHeaderEnumeratorState::Value => {
-                    if !m.is_element() {
-                        json.write_property_name_from_item_info(&ii)?;
-                    }
-                    json.write_string_value_json_safe("value")?; // TODO
-                }
-                EventHeaderEnumeratorState::StructBegin => {
-                    if !m.is_element() {
-                        json.write_property_name_from_item_info(&ii)?;
-                    }
-                    json.write_start_object()?;
-                }
-                EventHeaderEnumeratorState::StructEnd => json.write_end_object()?,
-                EventHeaderEnumeratorState::ArrayBegin => {
-                    json.write_property_name_from_item_info(&ii)?;
-                    if move_next_sibling && m.type_size() != 0 {
-                        json.write_start_array()?;
-                        json.write_string_value_fmt_json_safe(format_args!(
-                            "{}",
-                            m.element_count()
-                        ))?; // TODO
-                        json.write_end_array()?;
-
-                        if !e.move_next_sibling() {
-                            break;
-                        }
-
-                        continue; // skip move_next()
-                    }
-                    json.write_start_array()?;
-                }
-                EventHeaderEnumeratorState::ArrayEnd => json.write_end_array()?,
-                _ => {
-                    json.write_property_name_json_safe("unexpected_state")?;
-                    json.write_string_value_fmt_json_safe(format_args!("{:?}", e.state()))?;
-                }
-            }
-
-            if !e.move_next() {
-                break;
-            }
-        }
-    }
-    return Ok(());
-}
-
 /// For each event in the EventHeaderInterceptorLE64.dat file, use EventHeaderEnumerator to
 /// enumerate the fields of the event. Generate JSON with the results.
-/// TODO: Compare the resulting JSON with a known-good JSON file, pending implementation of
-/// PerfItemValue::write support.
-#[test]
-fn enumerate_movenext() -> Result<(), fmt::Error> {
+fn enumerate_impl(
+    output_filename: &str,
+    buffer: &mut String,
+    move_next_sibling: bool,
+) -> Result<(), fmt::Error> {
     let mut dat_path = env::current_dir().unwrap();
     dat_path.push("test_data");
     dat_path.push("EventHeaderInterceptorLE64.dat");
 
     let mut ctx = EventHeaderEnumeratorContext::new();
-    let mut buffer = String::new();
-    let mut json = JsonWriter::new(&mut buffer, PerfConvertOptions::Default, false);
+    let mut json = JsonWriter::new(buffer, PerfConvertOptions::Default, false);
 
-    json.write_start_array()?;
+    json.write_array_begin()?;
 
     let dat_vec = fs::read(dat_path).unwrap();
     let dat_bytes = &dat_vec[..];
@@ -106,34 +50,110 @@ fn enumerate_movenext() -> Result<(), fmt::Error> {
         match ctx.enumerate(tracepoint_name, event_data) {
             Err(e) => {
                 json.write_newline_before_value(1)?;
-                json.write_start_object()?;
+                json.write_object_begin()?;
                 json.write_property_name_json_safe("n")?;
-                json.write_string_value(tracepoint_name)?;
+                json.write_value_quoted_escaped(tracepoint_name)?;
                 json.write_property_name_json_safe("enumerate_error")?;
-                json.write_string_value_fmt_json_safe(format_args!("{:?}", e))?;
-                json.write_end_object()?;
+                json.write_fmt_value_quoted_escaped(format_args!("{:?}", e))?;
+                json.write_object_end()?;
             }
             Ok(mut e) => {
                 let ei = e.event_info();
                 json.write_newline_before_value(1)?;
-                json.write_start_object()?;
+                json.write_object_begin()?;
 
                 json.write_property_name_json_safe("n")?;
-                json.write_string_value_fmt(format_args!(
+                json.write_fmt_value_quoted_escaped(format_args!(
                     "{}:{}",
                     ei.provider_name(),
                     ei.name_chars(),
                 ))?;
 
-                enumerate(&mut json, &mut e, false)?;
+                if e.move_next() {
+                    loop {
+                        let ii = e.item_info();
+                        let m = ii.metadata();
+                        match e.state() {
+                            EventHeaderEnumeratorState::Value => {
+                                if !m.is_element() {
+                                    json.write_property_name_from_item_info(&ii)?;
+                                }
+                                json.write_fmt_value_unquoted_json_safe(format_args!(
+                                    "{}",
+                                    ii.value()
+                                ))?;
+                            }
+                            EventHeaderEnumeratorState::StructBegin => {
+                                if !m.is_element() {
+                                    json.write_property_name_from_item_info(&ii)?;
+                                }
+                                json.write_object_begin()?;
+                            }
+                            EventHeaderEnumeratorState::StructEnd => json.write_object_end()?,
+                            EventHeaderEnumeratorState::ArrayBegin => {
+                                json.write_property_name_from_item_info(&ii)?;
+                                if move_next_sibling && m.type_size() != 0 {
+                                    json.write_array_begin()?;
 
-                json.write_end_object()?;
+                                    if ii.metadata().element_count() != 0 {
+                                        // TODO
+                                        json.write_fmt_value_unquoted_json_safe(format_args!(
+                                            "{}",
+                                            ii.value()
+                                        ))?;
+                                    }
+
+                                    json.write_array_end()?;
+
+                                    if !e.move_next_sibling() {
+                                        break;
+                                    }
+
+                                    continue; // skip move_next()
+                                }
+                                json.write_array_begin()?;
+                            }
+                            EventHeaderEnumeratorState::ArrayEnd => json.write_array_end()?,
+                            _ => {
+                                json.write_property_name_json_safe("unexpected_state")?;
+                                json.write_fmt_value_quoted_json_safe(format_args!(
+                                    "{:?}",
+                                    e.state()
+                                ))?;
+                            }
+                        }
+
+                        if !e.move_next() {
+                            break;
+                        }
+                    }
+                }
+
+                json.write_object_end()?;
             }
         }
     }
 
-    json.write_end_array()?;
+    json.write_array_end()?;
 
-    println!("{}", buffer);
+    let out_path = env::current_dir().unwrap().join(output_filename);
+    fs::write(out_path, buffer.as_bytes()).unwrap();
+    println!("{}: {}", output_filename, buffer);
+    return Ok(());
+}
+
+#[test]
+fn enumerate() -> Result<(), fmt::Error> {
+    let mut movenext_buffer = String::new();
+    enumerate_impl(".enumerate_movenext.json", &mut movenext_buffer, false)?;
+
+    let mut movenextsibling_buffer = String::new();
+    enumerate_impl(
+        ".enumerate_movenextsibling.json",
+        &mut movenextsibling_buffer,
+        true,
+    )?;
+
+    assert_eq!(movenext_buffer, movenextsibling_buffer);
     return Ok(());
 }
