@@ -1,6 +1,6 @@
 [package]
 name = "eventheader"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 authors = ["Microsoft"]
 license = "MIT"
@@ -30,6 +30,7 @@ macros = ["dep:eventheader_macros"]
 
 [dependencies]
 tracepoint = { default-features = false, version = "= 0.4.0", path = "../tracepoint" }
+eventheader_types = { version = "= 0.4.1", path = "../eventheader_types" }
 eventheader_macros = { optional = true, version = "= 0.3.0", path = "../eventheader_macros" }
 
 [dev-dependencies]
