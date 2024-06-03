@@ -22,7 +22,7 @@ impl Guid {
     /// provider name. The hash uses the same algorithm as many Windows tracing tools
     /// and APIs. Given the same name, it will always generate the same GUID.
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///    Guid::from_name("MyProvider"),
     ///    Guid::from_u128(&0xb3864c38_4273_58c5_545b_8b3608343471));
@@ -49,7 +49,7 @@ impl Guid {
 
     /// Creates a GUID from field values.
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]),
     ///     Guid::from_bytes_be(&[0xa3, 0xa2, 0xa1, 0xa0, 0xb1, 0xb0, 0xc1, 0xc0, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]));
@@ -67,7 +67,7 @@ impl Guid {
 
     /// Creates a GUID from bytes in big-endian (RFC) byte order.
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]),
     ///     Guid::from_bytes_be(&[0xa3, 0xa2, 0xa1, 0xa0, 0xb1, 0xb0, 0xc1, 0xc0, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]));
@@ -78,7 +78,7 @@ impl Guid {
 
     /// Creates a GUID from bytes in little-endian byte order.
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]),
     ///     Guid::from_bytes_le(&[0xa0, 0xa1, 0xa2, 0xa3, 0xb0, 0xb1, 0xc0, 0xc1, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]));
@@ -93,7 +93,7 @@ impl Guid {
 
     /// Creates a GUID from a u128 value.
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]),
     ///     Guid::from_u128(&0xa3a2a1a0_b1b0_c1c0_d7d6d5d4d3d2d1d0));
@@ -105,7 +105,7 @@ impl Guid {
     /// Creates a GUID from a string with optional {} and optional '-'.
     /// Returns None if GUID could not be parsed from the input.
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]),
     ///     Guid::try_parse("{a3a2a1a0-b1b0-c1c0-d7d6-d5d4d3d2d1d0}").unwrap());
@@ -123,7 +123,7 @@ impl Guid {
     /// Creates a GUID from a string with optional {} and optional '-'.
     /// Returns None if GUID could not be parsed from the input.
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]),
     ///     Guid::try_parse_ascii(b"{a3a2a1a0-b1b0-c1c0-d7d6-d5d4d3d2d1d0}").unwrap());
@@ -189,7 +189,7 @@ impl Guid {
 
     /// Returns the field values of the GUID as a tuple.
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]).to_fields(),
     ///     (0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]));
@@ -209,7 +209,7 @@ impl Guid {
 
     /// Returns this implementation's in-memory byte representation.
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     *Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]).as_bytes_raw(),
     ///     [0xa3, 0xa2, 0xa1, 0xa0, 0xb1, 0xb0, 0xc1, 0xc0, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]);
@@ -220,7 +220,7 @@ impl Guid {
 
     /// Returns the bytes of the GUID in RFC byte order (big-endian).
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]).to_bytes_be(),
     ///     [0xa3, 0xa2, 0xa1, 0xa0, 0xb1, 0xb0, 0xc1, 0xc0, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]);
@@ -232,7 +232,7 @@ impl Guid {
 
     /// Returns the bytes of the GUID in Windows byte order (little-endian).
     /// ```
-    /// # use eventheader::Guid;
+    /// # use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]).to_bytes_le(),
     ///     [0xa0, 0xa1, 0xa2, 0xa3, 0xb0, 0xb1, 0xc0, 0xc1, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]);
@@ -248,7 +248,7 @@ impl Guid {
 
     /// Returns the GUID as a u128 value.
     /// ```
-    /// use eventheader::Guid;
+    /// use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]).to_u128(),
     ///     0xa3a2a1a0_b1b0_c1c0_d7d6d5d4d3d2d1d0);
@@ -265,7 +265,7 @@ impl Guid {
     /// Convert GUID to utf8 string bytes.
     /// To get a &str, use: `str::from_utf8(&guid.to_utf8_bytes()).unwrap()`.
     /// ```
-    /// use eventheader::Guid;
+    /// use eventheader_types::Guid;
     /// assert_eq!(
     ///     Guid::from_fields(0xa3a2a1a0, 0xb1b0, 0xc1c0, [0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0]).to_utf8_bytes(),
     ///     *b"a3a2a1a0-b1b0-c1c0-d7d6-d5d4d3d2d1d0");

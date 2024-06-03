@@ -145,11 +145,3 @@ impl EventHeaderExtension {
         };
     }
 }
-
-/// Returns the count for a variable-length array field.
-///
-/// Returns the smaller of `value.len()` and `65535`.
-pub fn slice_count<T>(value: &[T]) -> u16 {
-    let len = value.len();
-    return if 65535 < len { 65535 } else { len as u16 };
-}

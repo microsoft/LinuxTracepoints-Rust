@@ -10,11 +10,11 @@ use core::ptr;
 use core::str;
 use core::sync::atomic;
 
+use eventheader_types::EventHeader;
 use tracepoint::EventDataDescriptor;
 
 use crate::Level;
 use crate::_internal;
-use crate::descriptors::EventHeader;
 
 #[allow(unused_imports)] // For docs
 #[cfg(feature = "macros")]
@@ -335,6 +335,7 @@ impl Write for CommandStringBuffer {
 /// `ProviderName_L1K1f u8 eventheader_flags; u8 version; u16 id; u16 tag; u8 opcode; u8 level`.
 pub struct CommandString(CommandStringBuffer);
 
+#[allow(clippy::new_without_default)]
 impl CommandString {
     /// Creates a CommandString object.
     pub const fn new() -> Self {

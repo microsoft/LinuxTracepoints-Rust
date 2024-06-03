@@ -9,15 +9,15 @@ use core::mem;
 use core::ptr;
 use core::time::Duration;
 
-use crate::enums::ExtensionKind;
+use eventheader_types::ExtensionKind;
+
+pub use eventheader_types::EventHeader;
+pub use eventheader_types::EventHeaderExtension;
+pub use eventheader_types::HeaderFlags;
 
 pub use tracepoint::EventDataDescriptor;
 pub use tracepoint::TracepointState;
 
-pub use crate::descriptors::slice_count;
-pub use crate::descriptors::EventHeader;
-pub use crate::descriptors::EventHeaderExtension;
-pub use crate::enums::HeaderFlags;
 pub use crate::provider::provider_new;
 pub use crate::provider::CommandString;
 pub use crate::provider::EventHeaderTracepoint;
@@ -41,6 +41,14 @@ pub const fn tag_byte0(tag: u16) -> u8 {
 /// Second byte of tag.
 pub const fn tag_byte1(tag: u16) -> u8 {
     return tag.to_ne_bytes()[1];
+}
+
+/// Returns the count for a variable-length array field.
+///
+/// Returns the smaller of `value.len()` and `65535`.
+pub fn slice_count<T>(value: &[T]) -> u16 {
+    let len = value.len();
+    return if 65535 < len { 65535 } else { len as u16 };
 }
 
 /// Returns the time_t corresponding to a duration returned by a successful call to

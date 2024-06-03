@@ -6,6 +6,10 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
+/// # v0.4.1 (TBD)
+/// - Move eventheader types into separate `eventheader_types` crate.
+pub mod v0_4_1 {}
+
 /// # v0.4.0 (2024-04-12)
 /// - BUG FIX: Fix `EADDRINUSE` returned during `register()` on newer kernels.
 ///   The "name already in use" detection splits on whitespace, while all other
