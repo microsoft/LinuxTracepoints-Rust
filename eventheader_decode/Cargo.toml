@@ -22,5 +22,19 @@ repository = "https://github.com/microsoft/LinuxTracepoints-Rust"
 readme = "README.md"
 rust-version = "1.63"
 
+[features]
+default = ["decode_date", "rustc_1_77"]
+
+# Support for converting time32 and time64 values into strings:
+# On Windows, we use FileTimeToSystemTime. On Unix, we use libc::gmtime_r.
+decode_date = ["libc"]
+
+# features that require rustc 1.77:
+# Support for Ipv4Addr and Ipv6Addr in core.
+rustc_1_77 = []
+
 [dependencies]
 eventheader_types = { version = "= 0.4.1", path = "../eventheader_types" }
+
+[target."cfg(unix)".dependencies]
+libc = { default-features = false, version = "0.2", optional = true }

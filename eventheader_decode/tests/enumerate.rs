@@ -20,12 +20,18 @@ fn enumerate_impl(
     buffer: &mut String,
     move_next_sibling: bool,
 ) -> Result<(), fmt::Error> {
+    const OPTIONS: PerfConvertOptions = PerfConvertOptions::Default
+        .and_not(PerfConvertOptions::BoolOutOfRangeAsString)
+        .or(PerfConvertOptions::FloatExtraPrecision);
+
+    let mut tmp_str = String::new();
     let mut dat_path = env::current_dir().unwrap();
     dat_path.push("test_data");
     dat_path.push("EventHeaderInterceptorLE64.dat");
 
     let mut ctx = EventHeaderEnumeratorContext::new();
-    let mut json = JsonWriter::new(buffer, PerfConvertOptions::Default, false);
+    buffer.push('\u{FEFF}');
+    let mut json = JsonWriter::new(buffer, OPTIONS, false);
 
     json.write_array_begin()?;
 
@@ -52,22 +58,18 @@ fn enumerate_impl(
                 json.write_newline_before_value(1)?;
                 json.write_object_begin()?;
                 json.write_property_name_json_safe("n")?;
-                json.write_value_quoted_escaped(tracepoint_name)?;
+                json.write_value_quoted(|w| w.write_str_with_json_escape(tracepoint_name))?;
                 json.write_property_name_json_safe("enumerate_error")?;
-                json.write_fmt_value_quoted_escaped(format_args!("{:?}", e))?;
+                json.write_value_quoted(|w| w.write_display_with_no_filter(e))?;
                 json.write_object_end()?;
             }
             Ok(mut e) => {
                 let ei = e.event_info();
-                json.write_newline_before_value(1)?;
+                json.write_newline_before_value(2)?;
                 json.write_object_begin()?;
 
                 json.write_property_name_json_safe("n")?;
-                json.write_fmt_value_quoted_escaped(format_args!(
-                    "{}:{}",
-                    ei.provider_name(),
-                    ei.name_chars(),
-                ))?;
+                json.write_value_quoted(|w| w.write_display_with_no_filter(ei.identity_display()))?;
 
                 if e.move_next() {
                     loop {
@@ -78,10 +80,10 @@ fn enumerate_impl(
                                 if !m.is_element() {
                                     json.write_property_name_from_item_info(&ii)?;
                                 }
-                                json.write_fmt_value_unquoted_json_safe(format_args!(
-                                    "{}",
-                                    ii.value()
-                                ))?;
+
+                                tmp_str.clear();
+                                ii.value().write_json_scalar_to(&mut tmp_str, OPTIONS)?;
+                                json.write_value(|w| w.write_display_with_no_filter(&tmp_str))?;
                             }
                             EventHeaderEnumeratorState::StructBegin => {
                                 if !m.is_element() {
@@ -93,17 +95,10 @@ fn enumerate_impl(
                             EventHeaderEnumeratorState::ArrayBegin => {
                                 json.write_property_name_from_item_info(&ii)?;
                                 if move_next_sibling && m.type_size() != 0 {
-                                    json.write_array_begin()?;
-
-                                    if ii.metadata().element_count() != 0 {
-                                        // TODO
-                                        json.write_fmt_value_unquoted_json_safe(format_args!(
-                                            "{}",
-                                            ii.value()
-                                        ))?;
-                                    }
-
-                                    json.write_array_end()?;
+                                    tmp_str.clear();
+                                    ii.value()
+                                        .write_json_simple_array_to(&mut tmp_str, OPTIONS)?;
+                                    json.write_value(|w| w.write_display_with_no_filter(&tmp_str))?;
 
                                     if !e.move_next_sibling() {
                                         break;
@@ -116,10 +111,9 @@ fn enumerate_impl(
                             EventHeaderEnumeratorState::ArrayEnd => json.write_array_end()?,
                             _ => {
                                 json.write_property_name_json_safe("unexpected_state")?;
-                                json.write_fmt_value_quoted_json_safe(format_args!(
-                                    "{:?}",
-                                    e.state()
-                                ))?;
+                                json.write_value_quoted(|w| {
+                                    w.write_display_with_no_filter(e.state())
+                                })?;
                             }
                         }
 
@@ -129,12 +123,23 @@ fn enumerate_impl(
                     }
                 }
 
+                json.write_property_name_json_safe("meta")?;
+                json.write_object_begin()?;
+                json.write_value(|w| w.write_display_with_no_filter(ei.json_info_display()))?;
+                json.write_object_end()?;
+
                 json.write_object_end()?;
             }
         }
     }
 
     json.write_array_end()?;
+
+    if cfg!(windows) {
+        buffer.push('\r');
+    }
+
+    buffer.push('\n');
 
     let out_path = env::current_dir().unwrap().join(output_filename);
     fs::write(out_path, buffer.as_bytes()).unwrap();

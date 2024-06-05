@@ -1,15 +1,22 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+use core::fmt;
+use core::fmt::Write;
 use core::mem;
 use core::str;
 
 use eventheader_types::*;
 
+use crate::charconv;
+use crate::filters;
+use crate::filters::Filter;
+use crate::writers;
 use crate::PerfByteReader;
+use crate::PerfConvertOptions;
+use crate::PerfInfoOptions;
 use crate::PerfItemMetadata;
 use crate::PerfItemValue;
-use crate::_internal;
 
 #[derive(Clone, Copy, Debug)]
 enum SubState {
@@ -88,28 +95,253 @@ struct FieldType {
     pub tag: u16,
 }
 
-/// An iterator that decodes the name of an event or a field in an EventHeader event.
-/// This iterator tries to interpret the name as UTF-8, but falls back to Latin1 if
-/// the name contains non-UTF-8 sequences.
-///
-/// This iterator is returned by [`EventHeaderEventInfo::name_chars`] or
-///  [`EventHeaderItemInfo::name_chars`].
-///
-/// Use one of the following methods to get the name:
-///
-/// - Pass the [`NameChars`] object to a format macro.
-///
-///   `format!("{}", info.name_chars())`
-///
-/// - Call [`NameChars::write_to`] to write the name to a writer, such as a string.
-///
-///   `info.name_chars().write_to(&mut my_string).unwrap()`
-///
-/// - Iterate to get the characters of the name.
-///   (Destructive: iteration consumes the iterator.)
-///
-///   `info.name_chars().collect::<String>()`
-pub type NameChars<'dat> = _internal::CharsFromUtf8WithLatin1Fallback<'dat>;
+/// Formatter for the name of an EventHeader event or field. Tries to interpret the
+/// name as UTF-8, but falls back to Latin1 if the name contains non-UTF-8 sequences.
+#[derive(Clone, Copy, Debug)]
+pub struct NameDisplay<'dat> {
+    name: &'dat [u8],
+}
+
+impl<'dat> fmt::Display for NameDisplay<'dat> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+        return self.write_to(f);
+    }
+}
+
+impl<'dat> NameDisplay<'dat> {
+    /// Writes the name to the specified writer.
+    pub fn write_to<W: fmt::Write>(&self, writer: &mut W) -> fmt::Result {
+        let mut dest = filters::WriteFilter::new(writer);
+        return charconv::write_utf8_with_latin1_fallback_to(self.name, &mut dest);
+    }
+}
+
+/// Formatter for the name and tag of an EventHeader field.
+/// If the field tag is 0, writes just the field name.
+/// Otherwise, writes the field name plus a suffix like ";tag=0x1234".
+#[derive(Clone, Copy, Debug)]
+pub struct NameAndTagDisplay<'dat> {
+    name: &'dat [u8],
+    tag: u16,
+}
+
+impl<'dat> fmt::Display for NameAndTagDisplay<'dat> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+        return self.write_to(f);
+    }
+}
+
+impl<'dat> NameAndTagDisplay<'dat> {
+    /// If the field tag is 0, writes just the field name.
+    /// Otherwise, writes the field name plus a suffix like ";tag=0x1234".
+    pub fn write_to<W: fmt::Write>(&self, writer: &mut W) -> fmt::Result {
+        let mut dest = filters::WriteFilter::new(writer);
+        charconv::write_utf8_with_latin1_fallback_to(self.name, &mut dest)?;
+        if self.tag != 0 {
+            return write!(dest, ";tag=0x{:X}", self.tag);
+        }
+        return Ok(());
+    }
+}
+
+/// Formatter for the identity of an EventHeader event, i.e. "ProviderName:EventName".
+#[derive(Clone, Copy, Debug)]
+pub struct IdentityDisplay<'nam, 'dat> {
+    provider_name: &'nam str,
+    name: &'dat [u8],
+}
+
+impl<'nam, 'dat> fmt::Display for IdentityDisplay<'nam, 'dat> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+        return self.write_to(f);
+    }
+}
+
+impl<'nam, 'dat> IdentityDisplay<'nam, 'dat> {
+    /// Writes the event identity, i.e. "ProviderName:EventName"
+    pub fn write_to<W: fmt::Write>(&self, writer: &mut W) -> fmt::Result {
+        let mut dest = filters::WriteFilter::new(writer);
+        dest.write_str(self.provider_name)?;
+        dest.write_ascii(b':')?;
+        return charconv::write_utf8_with_latin1_fallback_to(self.name, &mut dest);
+    }
+}
+
+/// Formatter for the "info" suffix of an EventHeader event, i.e. `"level": 5, "keyword": 3`.
+#[derive(Debug)]
+pub struct JsonInfoDisplay<'inf> {
+    event_info: &'inf EventHeaderEventInfo<'inf, 'inf>,
+    add_comma_before_first_item: bool,
+    info_options: PerfInfoOptions,
+    convert_options: PerfConvertOptions,
+}
+
+impl<'inf> fmt::Display for JsonInfoDisplay<'inf> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+        self.write_to(f)?;
+        return Ok(());
+    }
+}
+
+impl<'inf> JsonInfoDisplay<'inf> {
+    /// Configures whether a comma will be written before the first item, e.g.
+    /// `, "level": 5` (true) instead of `"level": 5` (false). The default value is false.
+    ///
+    /// Note that if no items are written, no comma is written regardless of this setting.
+    pub fn add_comma_before_first_item(&mut self, value: bool) -> &mut Self {
+        self.add_comma_before_first_item = value;
+        return self;
+    }
+
+    /// Configures the items that will be included in the suffix.
+    /// The default value is [`PerfInfoOptions::Default`].
+    pub fn info_options(&mut self, value: PerfInfoOptions) -> &mut Self {
+        self.info_options = value;
+        return self;
+    }
+
+    /// Configures the conversion options. The default value is [`PerfConvertOptions::Default`].
+    pub fn convert_options(&mut self, value: PerfConvertOptions) -> &mut Self {
+        self.convert_options = value;
+        return self;
+    }
+
+    /// Writes event metadata as a comma-separated list of 0 or more
+    /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
+    /// Retruns true if any items were written, false if nothing was written.
+    pub fn write_to<W: fmt::Write>(&self, w: &mut W) -> Result<bool, fmt::Error> {
+        let mut json =
+            writers::JsonWriter::new(w, self.convert_options, self.add_comma_before_first_item);
+        let mut any_written = false;
+
+        let tracepoint_name = self.event_info.tracepoint_name;
+        let provider_name_end = if self
+            .info_options
+            .has(PerfInfoOptions::Provider.or(PerfInfoOptions::Options))
+        {
+            // Unwrap: Shouldn't be possible to get an EventHeaderEventInfo with an invalid tracepoint name.
+            tracepoint_name.rfind('_').unwrap()
+        } else {
+            0
+        };
+
+        if self.info_options.has(PerfInfoOptions::Provider) {
+            any_written = true;
+            json.write_property_name_json_safe("provider")?;
+            json.write_value_quoted(|w| {
+                w.write_str_with_json_escape(&tracepoint_name[..provider_name_end])
+            })?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::Event) {
+            any_written = true;
+            json.write_property_name_json_safe("event")?;
+            json.write_value_quoted(|w| {
+                w.write_utf8_with_json_escape(self.event_info.name_bytes())
+            })?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::Id) && self.event_info.header.id != 0 {
+            any_written = true;
+            json.write_property_name_json_safe("id")?;
+            json.write_value(|w| w.write_display_with_no_filter(self.event_info.header.id))?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::Version) && self.event_info.header.version != 0 {
+            any_written = true;
+            json.write_property_name_json_safe("version")?;
+            json.write_value(|w| w.write_display_with_no_filter(self.event_info.header.version))?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::Level)
+            && self.event_info.header.level != Level::Invalid
+        {
+            any_written = true;
+            json.write_property_name_json_safe("level")?;
+            json.write_value(|w| {
+                w.write_display_with_no_filter(self.event_info.header.level.as_int())
+            })?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::Keyword) && self.event_info.keyword != 0 {
+            any_written = true;
+            json.write_property_name_json_safe("keyword")?;
+            json.write_value(|w| w.write_json_hex64(self.event_info.keyword))?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::Opcode)
+            && self.event_info.header.opcode != Opcode::Info
+        {
+            any_written = true;
+            json.write_property_name_json_safe("opcode")?;
+            json.write_value(|w| {
+                w.write_display_with_no_filter(self.event_info.header.opcode.as_int())
+            })?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::Tag) && self.event_info.header.tag != 0 {
+            any_written = true;
+            json.write_property_name_json_safe("tag")?;
+            json.write_value(|w| w.write_json_hex32(self.event_info.header.tag as u32))?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::Activity) && self.event_info.activity_id_len >= 16
+        {
+            any_written = true;
+            json.write_property_name_json_safe("activity")?;
+            let start = self.event_info.activity_id_start as usize;
+            json.write_value_quoted(|w| {
+                w.write_uuid(
+                    &self.event_info.event_data[start..start + 16]
+                        .try_into()
+                        .unwrap(),
+                )
+            })?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::RelatedActivity)
+            && self.event_info.activity_id_len >= 32
+        {
+            any_written = true;
+            json.write_property_name_json_safe("relatedActivity")?;
+            let start = self.event_info.activity_id_start as usize + 16;
+            json.write_value_quoted(|w| {
+                w.write_uuid(
+                    &self.event_info.event_data[start..start + 16]
+                        .try_into()
+                        .unwrap(),
+                )
+            })?;
+        }
+
+        if self.info_options.has(PerfInfoOptions::Options) {
+            let name_bytes = tracepoint_name.as_bytes();
+            let mut pos = provider_name_end;
+            while pos < name_bytes.len() {
+                let ch = name_bytes[pos];
+                if ch.is_ascii_uppercase() && ch != b'L' && ch != b'K' {
+                    any_written = true;
+                    json.write_property_name_json_safe("options")?;
+                    json.write_value_quoted(|w| {
+                        w.write_str_with_no_filter(&tracepoint_name[pos..])
+                    })?;
+                    break;
+                }
+                pos += 1;
+            }
+        }
+
+        if self.info_options.has(PerfInfoOptions::Flags) {
+            any_written = true;
+            json.write_property_name_json_safe("flags")?;
+            json.write_value(|w| {
+                w.write_json_hex32(self.event_info.header.flags.as_int() as u32)
+            })?;
+        }
+
+        return Ok(any_written);
+    }
+}
 
 /// Values for the `last_error()` property of [`EventHeaderEnumerator`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -133,6 +365,21 @@ pub enum EventHeaderEnumeratorError {
 
     /// Event has more than 8 levels of nested structs.
     StackOverflow,
+}
+
+impl fmt::Display for EventHeaderEnumeratorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text;
+        match self {
+            EventHeaderEnumeratorError::Success => text = "Success",
+            EventHeaderEnumeratorError::InvalidParameter => text = "InvalidParameter",
+            EventHeaderEnumeratorError::NotSupported => text = "NotSupported",
+            EventHeaderEnumeratorError::ImplementationLimit => text = "ImplementationLimit",
+            EventHeaderEnumeratorError::InvalidData => text = "InvalidData",
+            EventHeaderEnumeratorError::StackOverflow => text = "StackOverflow",
+        };
+        return write!(f, "{}", text);
+    }
 }
 
 /// Values for the State property of [`EventHeaderEnumerator`].
@@ -168,6 +415,23 @@ pub enum EventHeaderEnumeratorState {
 
     /// Positioned after the last item in a struct.
     StructEnd,
+}
+
+impl fmt::Display for EventHeaderEnumeratorState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text;
+        match self {
+            EventHeaderEnumeratorState::Error => text = "Error",
+            EventHeaderEnumeratorState::AfterLastItem => text = "AfterLastItem",
+            EventHeaderEnumeratorState::BeforeFirstItem => text = "BeforeFirstItem",
+            EventHeaderEnumeratorState::Value => text = "Value",
+            EventHeaderEnumeratorState::ArrayBegin => text = "ArrayBegin",
+            EventHeaderEnumeratorState::ArrayEnd => text = "ArrayEnd",
+            EventHeaderEnumeratorState::StructBegin => text = "StructBegin",
+            EventHeaderEnumeratorState::StructEnd => text = "StructEnd",
+        };
+        return write!(f, "{}", text);
+    }
 }
 
 impl EventHeaderEnumeratorState {
@@ -212,6 +476,50 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
         return self.event_data;
     }
 
+    /// Returns a formatter for the event's identity, i.e. "ProviderName:EventName".
+    pub fn identity_display(&self) -> IdentityDisplay<'nam, 'dat> {
+        return IdentityDisplay {
+            provider_name: self.provider_name(),
+            name: self.name_bytes(),
+        };
+    }
+
+    /// Returns a formatter for the event's "info" suffix.
+    ///
+    /// The returned formatter writes event metadata as a comma-separated list of 0 or more
+    /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
+    ///
+    /// The included items default to [`PerfInfoOptions::Default`], but can be customized with
+    /// the `info_options()` property.
+    ///
+    /// One name-value pair is appended for each metadata item that is both requested
+    /// by `info_options` and has a meaningful value available in the event. For example,
+    /// the "id" metadata item is only appended if the event has a non-zero `Id` value,
+    /// even if the `info_options` property includes [`PerfInfoOptions::Id`].
+    ///
+    /// The following metadata items are supported:
+    ///
+    /// - `"provider": "MyProviderName"` (off by default)
+    /// - `"event": "MyEventName"` (off by default)
+    /// - `"id": 123` (omitted if zero)
+    /// - `"version": 1` (omitted if zero)
+    /// - `"level": 5` (omitted if zero)
+    /// - `"keyword": "0x1"` (omitted if zero)
+    /// - `"opcode": 1` (omitted if zero)
+    /// - `"tag": "0x123"` (omitted if zero)
+    /// - `"activity": "12345678-1234-1234-1234-1234567890AB"` (omitted if not present)
+    /// - `"relatedActivity": "12345678-1234-1234-1234-1234567890AB"` (omitted if not present)
+    /// - `"options": "Gmygroup"` (omitted if not present, off by default)
+    /// - `"flags": "0x7"` (omitted if zero, off by default)
+    pub fn json_info_display(&self) -> JsonInfoDisplay {
+        return JsonInfoDisplay {
+            event_info: self,
+            add_comma_before_first_item: false,
+            info_options: PerfInfoOptions::Default,
+            convert_options: PerfConvertOptions::Default,
+        };
+    }
+
     /// Returns the offset into `event_data` where the event name starts.
     pub fn name_start(&self) -> u32 {
         return self.name_start;
@@ -220,6 +528,24 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
     /// Returns the length of the event name in bytes.
     pub fn name_len(&self) -> u32 {
         return self.name_len;
+    }
+
+    /// Returns the event's name as a byte slice. In a well-formed event, this will be valid UTF-8.
+    /// To handle cases where the name is not valid UTF-8, use `name_display()` instead.
+    pub fn name_bytes(&self) -> &'dat [u8] {
+        let start = self.name_start as usize;
+        let end = start + self.name_len as usize;
+        return &self.event_data[start..end];
+    }
+
+    /// Returns a formatter for the the event's name. The formatter tries to interpret
+    /// the field name as UTF-8, but falls back to Latin1 for any invalid UTF-8 sequences.
+    pub fn name_display(&self) -> NameDisplay<'dat> {
+        let start = self.name_start as usize;
+        let end = start + self.name_len as usize;
+        return NameDisplay {
+            name: &self.event_data[start..end],
+        };
     }
 
     /// Returns the offset into `event_data` where the activity ID section starts.
@@ -244,24 +570,8 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
         return self.keyword;
     }
 
-    /// Returns the event's name as a byte slice. In a well-formed event, this will be valid UTF-8.
-    /// To handle cases where the name is not valid UTF-8, use `name_chars()` instead.
-    pub fn name_bytes(&self) -> &'dat [u8] {
-        let start = self.name_start as usize;
-        let end = start + self.name_len as usize;
-        return &self.event_data[start..end];
-    }
-
-    /// Returns an iterator over the characters of the event's name.
-    /// This tries to interpret the event name as UTF-8, but falls back to Latin1 for invalid UTF-8.
-    pub fn name_chars(&self) -> NameChars<'dat> {
-        let start = self.name_start as usize;
-        let end = start + self.name_len as usize;
-        return NameChars::new(&self.event_data[start..end]);
-    }
-
     /// Returns the provider name (extracted from `tracepoint_name`).
-    pub fn provider_name(&self) -> &str {
+    pub fn provider_name(&self) -> &'nam str {
         let underscore_pos = self.tracepoint_name.rfind('_');
         if let Some(underscore_pos) = underscore_pos {
             return &self.tracepoint_name[..underscore_pos];
@@ -271,7 +581,7 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
     }
 
     /// Returns the provider options (extracted from `tracepoint_name`), e.g. "" or "Gmygroup".
-    pub fn options(&self) -> &str {
+    pub fn options(&self) -> &'nam str {
         let underscore_pos = self.tracepoint_name.rfind('_');
         if let Some(underscore_pos) = underscore_pos {
             // Skip "L...K..." by looking for the next uppercase letter other than L or K.
@@ -296,7 +606,7 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
     /// - If no activity ID: returns an empty slice.
     /// - If activity ID but no related ID: returns a 16-byte slice.
     /// - If activity ID and related ID: returns a 32-byte slice (activity ID followed by related ID).
-    pub fn activity_id_bytes(&self) -> &'dat [u8] {
+    pub fn activity_id_section(&self) -> &'dat [u8] {
         let start = self.activity_id_start as usize;
         let end = start + self.activity_id_len as usize;
         return &self.event_data[start..end];
@@ -351,6 +661,36 @@ impl<'dat> EventHeaderItemInfo<'dat> {
         return self.name_len;
     }
 
+    /// Returns the field's name as a byte slice. In a well-formed event, this will be valid UTF-8.
+    /// To handle cases where the name is not valid UTF-8, use `name_display()` instead.
+    pub fn name_bytes(&self) -> &'dat [u8] {
+        let start = self.name_start as usize;
+        let end = start + self.name_len as usize;
+        return &self.event_data[start..end];
+    }
+
+    /// Returns a formatter for the the field's name. The formatter tries to interpret
+    /// the field name as UTF-8, but falls back to Latin1 for any invalid UTF-8 sequences.
+    pub fn name_display(&self) -> NameDisplay<'dat> {
+        let start = self.name_start as usize;
+        let end = start + self.name_len as usize;
+        return NameDisplay {
+            name: &self.event_data[start..end],
+        };
+    }
+
+    /// Returns a formatter for the field's name and tag.
+    /// If the field tag is 0, this is the field name.
+    /// If the field tag is nonzero, this is the field name plus a suffix like ";tag=0x1234".
+    pub fn name_and_tag_display(&self) -> NameAndTagDisplay<'dat> {
+        let start = self.name_start as usize;
+        let end = start + self.name_len as usize;
+        return NameAndTagDisplay {
+            name: &self.event_data[start..end],
+            tag: self.metadata().field_tag(),
+        };
+    }
+
     /// Returns the field value.
     pub fn value(&self) -> &PerfItemValue<'dat> {
         return &self.value;
@@ -359,22 +699,6 @@ impl<'dat> EventHeaderItemInfo<'dat> {
     /// Returns the field's metadata (e.g. type information).
     pub fn metadata(&self) -> PerfItemMetadata {
         return self.value.metadata();
-    }
-
-    /// Returns the field's name as a byte slice. In a well-formed event, this will be valid UTF-8.
-    /// To handle cases where the name is not valid UTF-8, use `name_chars()` instead.
-    pub fn name_bytes(&self) -> &'dat [u8] {
-        let start = self.name_start as usize;
-        let end = start + self.name_len as usize;
-        return &self.event_data[start..end];
-    }
-
-    /// Returns an iterator over the characters of the field's name.
-    /// This tries to interpret the field name as UTF-8, but falls back to Latin1 for invalid UTF-8.
-    pub fn name_chars(&self) -> NameChars<'dat> {
-        let start = self.name_start as usize;
-        let end = start + self.name_len as usize;
-        return NameChars::new(&self.event_data[start..end]);
     }
 }
 
@@ -729,11 +1053,11 @@ impl EventHeaderEnumeratorContext {
                 return Err(EventHeaderEnumeratorError::NotSupported);
             }
 
-            attrib_pos -= 1;
-            if tp_name_bytes[attrib_pos] == b'_' {
-                attrib_pos += 1; // Skip underscore.
+            if tp_name_bytes[attrib_pos - 1] == b'_' {
                 break;
             }
+
+            attrib_pos -= 1;
         }
 
         if attrib_pos >= tp_name_bytes.len() || tp_name_bytes[attrib_pos] != b'L' {

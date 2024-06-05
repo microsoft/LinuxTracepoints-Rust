@@ -8,17 +8,17 @@ const ITERATIONS: usize = 5000;
 
 #[inline(never)]
 fn impl_1(f: &mut impl fmt::Write, bytes: &[u8]) {
-    let mut writer = edi::TextWriter::new(f);
+    let mut writer = edi::ValueWriter::new(f, ed::PerfConvertOptions::Default);
     for _ in 0..ITERATIONS {
-        let _ = writer.write_latin1(bytes);
+        let _ = writer.write_latin1_with_no_filter(bytes);
     }
 }
 
 #[inline(never)]
 fn impl_2(f: &mut impl fmt::Write, bytes: &[u8]) {
-    let mut writer = edi::TextWriter::new(f);
+    let mut writer = edi::ValueWriter::new(f, ed::PerfConvertOptions::Default);
     for _ in 0..ITERATIONS {
-        let _ = writer.write_utf8_with_latin1_fallback(bytes);
+        let _ = writer.write_utf8_with_no_filter(bytes);
     }
 }
 

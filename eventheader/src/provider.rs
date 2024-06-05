@@ -12,7 +12,6 @@ use core::sync::atomic;
 
 use eventheader_types::EventHeader;
 use tracepoint::EventDataDescriptor;
-use eventheader_types::EventHeader;
 
 use crate::Level;
 use crate::_internal;
