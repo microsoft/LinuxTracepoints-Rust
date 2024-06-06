@@ -1,6 +1,7 @@
 use std::env;
 use std::fmt;
 use std::fs;
+use std::time;
 
 use eventheader_decode::_internal::JsonWriter;
 use eventheader_decode::*;
@@ -13,18 +14,25 @@ fn strnlen(bytes: &[u8]) -> usize {
     return len;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Method {
+    MoveNext,
+    MoveNextSibling,
+    WriteItem,
+}
+
 /// For each event in the EventHeaderInterceptorLE64.dat file, use EventHeaderEnumerator to
 /// enumerate the fields of the event. Generate JSON with the results.
 fn enumerate_impl(
     output_filename: &str,
     buffer: &mut String,
-    move_next_sibling: bool,
+    tmp_str: &mut String,
+    method: Method,
 ) -> Result<(), fmt::Error> {
     const OPTIONS: PerfConvertOptions = PerfConvertOptions::Default
         .and_not(PerfConvertOptions::BoolOutOfRangeAsString)
         .or(PerfConvertOptions::FloatExtraPrecision);
 
-    let mut tmp_str = String::new();
     let mut dat_path = env::current_dir().unwrap();
     dat_path.push("test_data");
     dat_path.push("EventHeaderInterceptorLE64.dat");
@@ -71,7 +79,12 @@ fn enumerate_impl(
                 json.write_property_name_json_safe("n")?;
                 json.write_value_quoted(|w| w.write_display_with_no_filter(ei.identity_display()))?;
 
-                if e.move_next() {
+                if Method::WriteItem == method {
+                    tmp_str.clear();
+                    if e.write_item_and_move_next_sibling(tmp_str, false, OPTIONS)? {
+                        json.write_value(|w| w.write_display_with_no_filter(&tmp_str))?;
+                    }
+                } else if e.move_next() {
                     loop {
                         let ii = e.item_info();
                         let m = ii.metadata();
@@ -82,7 +95,7 @@ fn enumerate_impl(
                                 }
 
                                 tmp_str.clear();
-                                ii.value().write_json_scalar_to(&mut tmp_str, OPTIONS)?;
+                                ii.value().write_json_scalar_to(tmp_str, OPTIONS)?;
                                 json.write_value(|w| w.write_display_with_no_filter(&tmp_str))?;
                             }
                             EventHeaderEnumeratorState::StructBegin => {
@@ -94,10 +107,9 @@ fn enumerate_impl(
                             EventHeaderEnumeratorState::StructEnd => json.write_object_end()?,
                             EventHeaderEnumeratorState::ArrayBegin => {
                                 json.write_property_name_from_item_info(&ii)?;
-                                if move_next_sibling && m.type_size() != 0 {
+                                if Method::MoveNextSibling == method && m.type_size() != 0 {
                                     tmp_str.clear();
-                                    ii.value()
-                                        .write_json_simple_array_to(&mut tmp_str, OPTIONS)?;
+                                    ii.value().write_json_simple_array_to(tmp_str, OPTIONS)?;
                                     json.write_value(|w| w.write_display_with_no_filter(&tmp_str))?;
 
                                     if !e.move_next_sibling() {
@@ -141,24 +153,76 @@ fn enumerate_impl(
 
     buffer.push('\n');
 
-    let out_path = env::current_dir().unwrap().join(output_filename);
-    fs::write(out_path, buffer.as_bytes()).unwrap();
-    println!("{}: {}", output_filename, buffer);
+    if !output_filename.is_empty() {
+        let out_path = env::current_dir().unwrap().join(output_filename);
+        fs::write(out_path, buffer.as_bytes()).unwrap();
+    }
+
     return Ok(());
 }
 
 #[test]
 fn enumerate() -> Result<(), fmt::Error> {
+    let mut tmp_str = String::new();
+
     let mut movenext_buffer = String::new();
-    enumerate_impl(".enumerate_movenext.json", &mut movenext_buffer, false)?;
+    enumerate_impl(
+        ".enumerate_movenext.json",
+        &mut movenext_buffer,
+        &mut tmp_str,
+        Method::MoveNext,
+    )?;
 
     let mut movenextsibling_buffer = String::new();
     enumerate_impl(
         ".enumerate_movenextsibling.json",
         &mut movenextsibling_buffer,
-        true,
+        &mut tmp_str,
+        Method::MoveNextSibling,
+    )?;
+
+    let mut writeitem_buffer = String::new();
+    enumerate_impl(
+        ".enumerate_writeitem.json",
+        &mut writeitem_buffer,
+        &mut tmp_str,
+        Method::WriteItem,
     )?;
 
     assert_eq!(movenext_buffer, movenextsibling_buffer);
+    assert_eq!(movenext_buffer, writeitem_buffer);
+    return Ok(());
+}
+
+#[test]
+#[ignore]
+fn benchmark() -> Result<(), fmt::Error> {
+    const ITERATIONS: usize = 1000;
+    let mut buffer = String::new();
+    let mut tmp_str = String::new();
+
+    buffer.clear();
+    enumerate_impl("", &mut buffer, &mut tmp_str, Method::MoveNext)?;
+    let movenext_start = time::Instant::now();
+    for _ in 0..ITERATIONS {
+        buffer.clear();
+        enumerate_impl("", &mut buffer, &mut tmp_str, Method::MoveNext)?;
+    }
+    let movenext_duration = movenext_start.elapsed();
+
+    buffer.clear();
+    enumerate_impl("", &mut buffer, &mut tmp_str, Method::MoveNextSibling)?;
+    let movenextsibling_start = time::Instant::now();
+    for _ in 0..ITERATIONS {
+        buffer.clear();
+        enumerate_impl("", &mut buffer, &mut tmp_str, Method::MoveNextSibling)?;
+    }
+    let movenextsibling_duration = movenextsibling_start.elapsed();
+
+    print!(
+        "MoveNext: {:?}\nMoveNextSibling: {:?}\n",
+        movenext_duration, movenextsibling_duration,
+    );
+
     return Ok(());
 }

@@ -20,18 +20,17 @@ pub trait Filter: fmt::Write {
 // **** WriteFilter
 
 /// Filters into a `fmt::Write`.
-/// TODO: Buffering/batching.
-pub struct WriteFilter<'wri, W: fmt::Write> {
+pub struct WriteFilter<'wri, W: fmt::Write + ?Sized> {
     writer: &'wri mut W,
 }
 
-impl<'wri, W: fmt::Write> WriteFilter<'wri, W> {
+impl<'wri, W: fmt::Write + ?Sized> WriteFilter<'wri, W> {
     pub fn new(writer: &'wri mut W) -> Self {
         return Self { writer };
     }
 }
 
-impl<'wri, W: fmt::Write> Filter for WriteFilter<'wri, W> {
+impl<'wri, W: fmt::Write + ?Sized> Filter for WriteFilter<'wri, W> {
     fn write_ascii(&mut self, value: u8) -> fmt::Result {
         debug_assert!(value < 0x80);
         return self
@@ -44,7 +43,7 @@ impl<'wri, W: fmt::Write> Filter for WriteFilter<'wri, W> {
     }
 }
 
-impl<'wri, W: fmt::Write> fmt::Write for WriteFilter<'wri, W> {
+impl<'wri, W: fmt::Write + ?Sized> fmt::Write for WriteFilter<'wri, W> {
     fn write_str(&mut self, value: &str) -> fmt::Result {
         return self.writer.write_str(value);
     }
@@ -66,15 +65,16 @@ impl<'low, F: Filter> ControlCharsSpaceFilter<'low, F> {
 impl<'low, F: Filter> Filter for ControlCharsSpaceFilter<'low, F> {
     fn write_ascii(&mut self, value: u8) -> fmt::Result {
         debug_assert!(value < 0x80);
-        return if value < b' ' {
+        let result = if value < b' ' {
             self.lower.write_ascii(b' ')
         } else {
             self.lower.write_ascii(value)
         };
+        return result;
     }
 
     fn write_non_ascii(&mut self, value: char) -> fmt::Result {
-        self.lower.write_non_ascii(value)
+        return self.lower.write_non_ascii(value);
     }
 }
 
@@ -96,13 +96,13 @@ impl<'low, F: Filter> fmt::Write for ControlCharsSpaceFilter<'low, F> {
             }
         }
 
-        return if written_pos < bytes.len() {
+        if written_pos < bytes.len() {
             // Validated: if input is valid utf-8 then substring is also valid utf-8.
             self.lower
-                .write_str(str_from_validated_utf8(&bytes[written_pos..]))
-        } else {
-            Ok(())
-        };
+                .write_str(str_from_validated_utf8(&bytes[written_pos..]))?;
+        }
+
+        return Ok(());
     }
 }
 
@@ -124,17 +124,17 @@ impl<'low, F: Filter> ControlCharsJsonFilter<'low, F> {
 impl<'low, F: Filter> Filter for ControlCharsJsonFilter<'low, F> {
     fn write_ascii(&mut self, value: u8) -> fmt::Result {
         debug_assert!(value < 0x80);
-        self.json.write_ascii_impl(value)
+        return self.json.write_ascii_impl(value);
     }
 
     fn write_non_ascii(&mut self, value: char) -> fmt::Result {
-        self.json.write_non_ascii_impl(value)
+        return self.json.write_non_ascii_impl(value);
     }
 }
 
 impl<'low, F: Filter> fmt::Write for ControlCharsJsonFilter<'low, F> {
     fn write_str(&mut self, value: &str) -> fmt::Result {
-        self.json.write_str_impl(value)
+        return self.json.write_str_impl(value);
     }
 }
 
@@ -156,17 +156,17 @@ impl<'low, F: Filter> JsonEscapeFilter<'low, F> {
 impl<'low, F: Filter> Filter for JsonEscapeFilter<'low, F> {
     fn write_ascii(&mut self, value: u8) -> fmt::Result {
         debug_assert!(value < 0x80);
-        self.json.write_ascii_impl(value)
+        return self.json.write_ascii_impl(value);
     }
 
     fn write_non_ascii(&mut self, value: char) -> fmt::Result {
-        self.json.write_non_ascii_impl(value)
+        return self.json.write_non_ascii_impl(value);
     }
 }
 
 impl<'low, F: Filter> fmt::Write for JsonEscapeFilter<'low, F> {
     fn write_str(&mut self, value: &str) -> fmt::Result {
-        self.json.write_str_impl(value)
+        return self.json.write_str_impl(value);
     }
 }
 
@@ -182,7 +182,7 @@ impl<'low, const CONTROL_CHARS_ONLY: bool, F: Filter> JsonFilterImpl<'low, CONTR
     pub fn write_ascii_impl(&mut self, value: u8) -> fmt::Result {
         debug_assert!(value < 0x80);
 
-        match value {
+        let result = match value {
             b'"' if !CONTROL_CHARS_ONLY => self.lower.write_str("\\\""),
             b'\\' if !CONTROL_CHARS_ONLY => self.lower.write_str("\\\\"),
             b'\x08' => self.lower.write_str("\\b"),
@@ -207,11 +207,13 @@ impl<'low, const CONTROL_CHARS_ONLY: bool, F: Filter> JsonFilterImpl<'low, CONTR
             }
 
             _ => self.lower.write_ascii(value),
-        }
+        };
+
+        return result;
     }
 
     pub fn write_non_ascii_impl(&mut self, value: char) -> fmt::Result {
-        self.lower.write_non_ascii(value)
+        return self.lower.write_non_ascii(value);
     }
 
     pub fn write_str_impl(&mut self, value: &str) -> fmt::Result {
@@ -232,13 +234,13 @@ impl<'low, const CONTROL_CHARS_ONLY: bool, F: Filter> JsonFilterImpl<'low, CONTR
             }
         }
 
-        return if written_pos < bytes.len() {
+        if written_pos < bytes.len() {
             // Validated: if input is valid utf-8 then substring is also valid utf-8.
             self.lower
-                .write_str(str_from_validated_utf8(&bytes[written_pos..]))
-        } else {
-            Ok(())
-        };
+                .write_str(str_from_validated_utf8(&bytes[written_pos..]))?
+        }
+
+        return Ok(());
     }
 
     #[inline]

@@ -50,31 +50,31 @@ mod date_time {
         }
 
         pub const fn valid(&self) -> bool {
-            self.month_of_year != 0
+            return self.month_of_year != 0;
         }
 
         pub const fn year(&self) -> u32 {
-            self.year as u32
+            return self.year as u32;
         }
 
         pub const fn month_of_year(&self) -> u8 {
-            self.month_of_year as u8
+            return self.month_of_year as u8;
         }
 
         pub const fn day_of_month(&self) -> u8 {
-            self.day_of_month as u8
+            return self.day_of_month as u8;
         }
 
         pub const fn hour(&self) -> u8 {
-            self.hour as u8
+            return self.hour as u8;
         }
 
         pub const fn minute(&self) -> u8 {
-            self.minute as u8
+            return self.minute as u8;
         }
 
         pub const fn second(&self) -> u8 {
-            self.second as u8
+            return self.second as u8;
         }
     }
 
@@ -103,31 +103,31 @@ mod date_time {
         }
 
         pub const fn valid(&self) -> bool {
-            self.tm.tm_mday != 0
+            return self.tm.tm_mday != 0;
         }
 
         pub const fn year(&self) -> u32 {
-            self.tm.tm_year.wrapping_add(1900) as u32
+            return self.tm.tm_year.wrapping_add(1900) as u32;
         }
 
         pub const fn month_of_year(&self) -> u8 {
-            self.tm.tm_mon as u8 + 1
+            return self.tm.tm_mon as u8 + 1;
         }
 
         pub const fn day_of_month(&self) -> u8 {
-            self.tm.tm_mday as u8
+            return self.tm.tm_mday as u8;
         }
 
         pub const fn hour(&self) -> u8 {
-            self.tm.tm_hour as u8
+            return self.tm.tm_hour as u8;
         }
 
         pub const fn minute(&self) -> u8 {
-            self.tm.tm_min as u8
+            return self.tm.tm_min as u8;
         }
 
         pub const fn second(&self) -> u8 {
-            self.tm.tm_sec as u8
+            return self.tm.tm_sec as u8;
         }
     }
 }
@@ -141,43 +141,43 @@ mod date_time {
 
     impl DateTime {
         pub const fn new(_value: i64) -> Self {
-            Self {}
+            return Self {};
         }
 
         pub const fn valid(&self) -> bool {
-            false
+            return false;
         }
 
         pub const fn year(&self) -> u32 {
-            0
+            return 0;
         }
 
         pub const fn month_of_year(&self) -> u8 {
-            0
+            return 0;
         }
 
         pub const fn day_of_month(&self) -> u8 {
-            0
+            return 0;
         }
 
         pub const fn hour(&self) -> u8 {
-            0
+            return 0;
         }
 
         pub const fn minute(&self) -> u8 {
-            0
+            return 0;
         }
 
         pub const fn second(&self) -> u8 {
-            0
+            return 0;
         }
     }
 }
 
 /// Writes JSON values to a `fmt::Write` destination.
-pub struct JsonWriter<'wri, W: fmt::Write>(ValueWriter<'wri, W>);
+pub struct JsonWriter<'wri, W: fmt::Write + ?Sized>(ValueWriter<'wri, W>);
 
-impl<'wri, W: fmt::Write> JsonWriter<'wri, W> {
+impl<'wri, W: fmt::Write + ?Sized> JsonWriter<'wri, W> {
     /// Creates a new `JsonWriter` with the specified destination and options.
     /// `json_comma` specifies whether a comma should be written before the first JSON item.
     pub fn new(
@@ -185,12 +185,12 @@ impl<'wri, W: fmt::Write> JsonWriter<'wri, W> {
         options: PerfConvertOptions,
         json_comma: bool,
     ) -> JsonWriter<'wri, W> {
-        JsonWriter(ValueWriter {
-            dest: WriteFilter::<'wri, W>::new(writer),
+        return JsonWriter(ValueWriter {
+            dest: WriteFilter::new(writer),
             options,
             json_comma,
             json_space: json_comma && options.has(PerfConvertOptions::Space),
-        })
+        });
     }
 
     /// Returns true if a comma will need to be written before the next JSON item.
@@ -199,7 +199,7 @@ impl<'wri, W: fmt::Write> JsonWriter<'wri, W> {
     ///
     /// This is false after `{`, `[`, `json_newline_before_value`, and `json_property_name`.
     pub fn comma(&self) -> bool {
-        self.0.json_comma
+        return self.0.json_comma;
     }
 
     /// For use before a value or member.
@@ -330,26 +330,24 @@ impl<'wri, W: fmt::Write> JsonWriter<'wri, W> {
     /// Writes comma and space as needed.
     /// Updates `json_space`. Does NOT update `json_comma`.
     fn write_raw_comma_space(&mut self) -> fmt::Result {
-        if self.0.json_space {
-            self.0.json_space = self.0.options.has(PerfConvertOptions::Space);
+        let need_space = self.0.json_space;
+        self.0.json_space = self.0.options.has(PerfConvertOptions::Space);
+        return if need_space {
             if self.0.json_comma {
-                return self.0.dest.write_str(", ");
+                self.0.dest.write_str(", ")
             } else {
-                return self.0.dest.write_ascii(b' ');
+                self.0.dest.write_ascii(b' ')
             }
+        } else if self.0.json_comma {
+            self.0.dest.write_ascii(b',')
         } else {
-            self.0.json_space = self.0.options.has(PerfConvertOptions::Space);
-            if self.0.json_comma {
-                return self.0.dest.write_ascii(b',');
-            } else {
-                return Ok(());
-            }
-        }
+            Ok(())
+        };
     }
 }
 
 /// Writes values to a `fmt::Write` destination.
-pub struct ValueWriter<'wri, W: fmt::Write> {
+pub struct ValueWriter<'wri, W: fmt::Write + ?Sized> {
     dest: WriteFilter<'wri, W>,
     options: PerfConvertOptions,
 
@@ -364,7 +362,7 @@ pub struct ValueWriter<'wri, W: fmt::Write> {
     json_space: bool,
 }
 
-impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
+impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     const ERRNO_STRINGS: [&'static str; 134] = [
         "ERRNO(0)",
         "EPERM(1)",
@@ -504,12 +502,12 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
 
     /// Creates a new `ValueWriter` with the specified destination and options.
     pub fn new(writer: &'wri mut W, options: PerfConvertOptions) -> ValueWriter<'wri, W> {
-        ValueWriter {
-            dest: WriteFilter::<'wri, W>::new(writer),
+        return ValueWriter {
+            dest: WriteFilter::new(writer),
             options,
             json_comma: false,
             json_space: false,
-        }
+        };
     }
 
     /// Writes `"`, then invokes f, then writes `"`.
@@ -525,33 +523,33 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
 
     /// Writes a string with no filtering of control characters.
     pub fn write_str_with_no_filter(&mut self, value: &str) -> fmt::Result {
-        self.dest.write_str(value)
+        return self.dest.write_str(value);
     }
 
     /// Writes a string with JSON filtering of control/punctuation characters.
     pub fn write_str_with_json_escape(&mut self, value: &str) -> fmt::Result {
-        JsonEscapeFilter::new(&mut self.dest).write_str(value)
+        return JsonEscapeFilter::new(&mut self.dest).write_str(value);
     }
 
     /// Writes a string with no filtering of control characters.
     pub fn write_fmt_with_no_filter(&mut self, args: fmt::Arguments) -> fmt::Result {
-        self.dest.write_fmt(args)
+        return self.dest.write_fmt(args);
     }
 
     /// Writes string from Latin-1 bytes with no filtering of control characters.
     pub fn write_latin1_with_no_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_latin1_to(bytes, &mut self.dest)
+        return charconv::write_latin1_to(bytes, &mut self.dest);
     }
 
     /// Writes string from Latin-1 bytes with JSON filtering of control/punctuation characters.
     pub fn write_latin1_with_json_escape(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_latin1_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest))
+        return charconv::write_latin1_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest));
     }
 
     /// Writes string from Latin-1 bytes with filtering of control characters as specified by
     /// the [`PerfConvertOptions::StringControlCharsMask`] flags in `options`.
     pub fn write_latin1_with_control_chars_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        match self.options.and(PerfConvertOptions::StringControlCharsMask) {
+        return match self.options.and(PerfConvertOptions::StringControlCharsMask) {
             PerfConvertOptions::StringControlCharsReplaceWithSpace => {
                 charconv::write_latin1_to(bytes, &mut ControlCharsSpaceFilter::new(&mut self.dest))
             }
@@ -559,26 +557,26 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
                 charconv::write_latin1_to(bytes, &mut ControlCharsJsonFilter::new(&mut self.dest))
             }
             _ => self.write_latin1_with_no_filter(bytes),
-        }
+        };
     }
 
     /// Writes string from UTF-8 (with Latin-1 fallback) bytes with no filtering of control characters.
     pub fn write_utf8_with_no_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf8_with_latin1_fallback_to(bytes, &mut self.dest)
+        return charconv::write_utf8_with_latin1_fallback_to(bytes, &mut self.dest);
     }
 
     /// Writes string from UTF-8 (with Latin-1 fallback) bytes with JSON filtering of control/punctuation characters.
     pub fn write_utf8_with_json_escape(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf8_with_latin1_fallback_to(
+        return charconv::write_utf8_with_latin1_fallback_to(
             bytes,
             &mut JsonEscapeFilter::new(&mut self.dest),
-        )
+        );
     }
 
     /// Writes string from UTF-8 (with Latin-1 fallback) bytes with filtering of control characters as specified by
     /// the [`PerfConvertOptions::StringControlCharsMask`] flags in `options`.
     pub fn write_utf8_with_control_chars_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        match self.options.and(PerfConvertOptions::StringControlCharsMask) {
+        return match self.options.and(PerfConvertOptions::StringControlCharsMask) {
             PerfConvertOptions::StringControlCharsReplaceWithSpace => {
                 charconv::write_utf8_with_latin1_fallback_to(
                     bytes,
@@ -592,23 +590,23 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
                 )
             }
             _ => self.write_utf8_with_no_filter(bytes),
-        }
+        };
     }
 
     /// Writes string from UTF-16BE bytes with no filtering of control characters.
     pub fn write_utf16be_with_no_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf16be_to(bytes, &mut self.dest)
+        return charconv::write_utf16be_to(bytes, &mut self.dest);
     }
 
     /// Writes string from UTF-16BE bytes with JSON filtering of control/punctuation characters.
     pub fn write_utf16be_with_json_escape(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf16be_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest))
+        return charconv::write_utf16be_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest));
     }
 
     /// Writes string from UTF-16BE bytes with filtering of control characters as specified by
     /// the [`PerfConvertOptions::StringControlCharsMask`] flags in `options`.
     pub fn write_utf16be_with_control_chars_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        match self.options.and(PerfConvertOptions::StringControlCharsMask) {
+        return match self.options.and(PerfConvertOptions::StringControlCharsMask) {
             PerfConvertOptions::StringControlCharsReplaceWithSpace => {
                 charconv::write_utf16be_to(bytes, &mut ControlCharsSpaceFilter::new(&mut self.dest))
             }
@@ -616,23 +614,23 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
                 charconv::write_utf16be_to(bytes, &mut ControlCharsJsonFilter::new(&mut self.dest))
             }
             _ => self.write_utf16be_with_no_filter(bytes),
-        }
+        };
     }
 
     /// Writes string from UTF-16LE bytes with no filtering of control characters.
     pub fn write_utf16le_with_no_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf16le_to(bytes, &mut self.dest)
+        return charconv::write_utf16le_to(bytes, &mut self.dest);
     }
 
     /// Writes string from UTF-16LE bytes with JSON filtering of control/punctuation characters.
     pub fn write_utf16le_with_json_escape(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf16le_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest))
+        return charconv::write_utf16le_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest));
     }
 
     /// Writes string from UTF-16LE bytes with filtering of control characters as specified by
     /// the [`PerfConvertOptions::StringControlCharsMask`] flags in `options`.
     pub fn write_utf16le_with_control_chars_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        match self.options.and(PerfConvertOptions::StringControlCharsMask) {
+        return match self.options.and(PerfConvertOptions::StringControlCharsMask) {
             PerfConvertOptions::StringControlCharsReplaceWithSpace => {
                 charconv::write_utf16le_to(bytes, &mut ControlCharsSpaceFilter::new(&mut self.dest))
             }
@@ -640,23 +638,23 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
                 charconv::write_utf16le_to(bytes, &mut ControlCharsJsonFilter::new(&mut self.dest))
             }
             _ => self.write_utf16le_with_no_filter(bytes),
-        }
+        };
     }
 
     /// Writes string from UTF-32BE bytes with no filtering of control characters.
     pub fn write_utf32be_with_no_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf32be_to(bytes, &mut self.dest)
+        return charconv::write_utf32be_to(bytes, &mut self.dest);
     }
 
     /// Writes string from UTF-32BE bytes with JSON filtering of control/punctuation characters.
     pub fn write_utf32be_with_json_escape(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf32be_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest))
+        return charconv::write_utf32be_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest));
     }
 
     /// Writes string from UTF-32BE bytes with filtering of control characters as specified by
     /// the [`PerfConvertOptions::StringControlCharsMask`] flags in `options`.
     pub fn write_utf32be_with_control_chars_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        match self.options.and(PerfConvertOptions::StringControlCharsMask) {
+        return match self.options.and(PerfConvertOptions::StringControlCharsMask) {
             PerfConvertOptions::StringControlCharsReplaceWithSpace => {
                 charconv::write_utf32be_to(bytes, &mut ControlCharsSpaceFilter::new(&mut self.dest))
             }
@@ -664,23 +662,23 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
                 charconv::write_utf32be_to(bytes, &mut ControlCharsJsonFilter::new(&mut self.dest))
             }
             _ => self.write_utf32be_with_no_filter(bytes),
-        }
+        };
     }
 
     /// Writes string from UTF-32LE bytes with no filtering of control characters.
     pub fn write_utf32le_with_no_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf32le_to(bytes, &mut self.dest)
+        return charconv::write_utf32le_to(bytes, &mut self.dest);
     }
 
     /// Writes string from UTF-32LE bytes with JSON filtering of control/punctuation characters.
     pub fn write_utf32le_with_json_escape(&mut self, bytes: &[u8]) -> fmt::Result {
-        charconv::write_utf32le_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest))
+        return charconv::write_utf32le_to(bytes, &mut JsonEscapeFilter::new(&mut self.dest));
     }
 
     /// Writes string from UTF-32LE bytes with filtering of control characters as specified by
     /// the [`PerfConvertOptions::StringControlCharsMask`] flags in `options`.
     pub fn write_utf32le_with_control_chars_filter(&mut self, bytes: &[u8]) -> fmt::Result {
-        match self.options.and(PerfConvertOptions::StringControlCharsMask) {
+        return match self.options.and(PerfConvertOptions::StringControlCharsMask) {
             PerfConvertOptions::StringControlCharsReplaceWithSpace => {
                 charconv::write_utf32le_to(bytes, &mut ControlCharsSpaceFilter::new(&mut self.dest))
             }
@@ -688,14 +686,14 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
                 charconv::write_utf32le_to(bytes, &mut ControlCharsJsonFilter::new(&mut self.dest))
             }
             _ => self.write_utf32le_with_no_filter(bytes),
-        }
+        };
     }
 
     /// If `value` is a control char, write it respecting [`PerfConvertOptions::StringControlCharsMask`].
     /// Otherwise, if `value` is a valid Unicode code point, write it.
     /// Otherwise, write the replacement character.
     pub fn write_char32_with_control_chars_filter(&mut self, value: u32) -> fmt::Result {
-        if value >= 0x20 {
+        let result = if value >= 0x20 {
             self.dest.write_char(charconv::char_from_u32(value))
         } else {
             match self.options.and(PerfConvertOptions::StringControlCharsMask) {
@@ -707,24 +705,26 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
                 }
                 _ => self.dest.write_ascii(value as u8),
             }
-        }
+        };
+        return result;
     }
 
     /// Otherwise, if `value` is a valid Unicode code point, write it with JSON escape.
     /// Otherwise, write the replacement character.
     pub fn write_char32_with_json_escape(&mut self, value: u32) -> fmt::Result {
-        if value >= ('\\' as u32) {
+        let result = if value >= ('\\' as u32) {
             self.dest.write_char(charconv::char_from_u32(value))
         } else {
             JsonEscapeFilter::new(&mut self.dest).write_ascii(value as u8)
-        }
+        };
+        return result;
     }
 
     /// Writes e.g. `a3a2a1a0-b1b0-c1c0-d7d6-d5d4d3d2d1d0`.
     pub fn write_uuid(&mut self, value: &[u8; 16]) -> fmt::Result {
-        self.dest.write_str(unsafe {
+        return self.dest.write_str(unsafe {
             str::from_utf8_unchecked(&Guid::from_bytes_be(value).to_utf8_bytes())
-        })
+        });
     }
 
     /// Writes e.g. `01 1f f0`.
@@ -740,46 +740,48 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
 
     /// Writes any [`fmt::Display`] using `{}` formatting.
     pub fn write_display_with_no_filter<D: fmt::Display>(&mut self, value: D) -> fmt::Result {
-        write!(self.dest, "{}", value)
+        return write!(self.dest, "{}", value);
     }
 
     /// Writes hex integer e.g. `0x1FF`.
     pub fn write_hex32(&mut self, value: u32) -> fmt::Result {
-        write!(self.dest, "0x{:X}", value)
+        return write!(self.dest, "0x{:X}", value);
     }
 
     /// Writes hex integer e.g. `0x1FF`.
     pub fn write_hex64(&mut self, value: u64) -> fmt::Result {
-        write!(self.dest, "0x{:X}", value)
+        return write!(self.dest, "0x{:X}", value);
     }
 
     /// Writes an IPv4 address, e.g. `127.0.0.1`.
     pub fn write_ipv4(&mut self, value: [u8; 4]) -> fmt::Result {
-        write!(
+        return write!(
             self.dest,
             "{}.{}.{}.{}",
             value[0], value[1], value[2], value[3]
-        )
+        );
     }
 
     /// Writes hex string or decimal, respecting [`PerfConvertOptions::IntHexAsString`],
     /// e.g. `"0xFF"` or `255`.
     pub fn write_json_hex32(&mut self, value: u32) -> fmt::Result {
-        if self.options.has(PerfConvertOptions::IntHexAsString) {
+        let result = if self.options.has(PerfConvertOptions::IntHexAsString) {
             write!(self.dest, "\"0x{:X}\"", value)
         } else {
             write!(self.dest, "{}", value)
-        }
+        };
+        return result;
     }
 
     /// Writes hex string or decimal, respecting [`PerfConvertOptions::IntHexAsString`],
     /// e.g. `"0xFF"` or `255`.
     pub fn write_json_hex64(&mut self, value: u64) -> fmt::Result {
-        if self.options.has(PerfConvertOptions::IntHexAsString) {
+        let result = if self.options.has(PerfConvertOptions::IntHexAsString) {
             write!(self.dest, "\"0x{:X}\"", value)
         } else {
             write!(self.dest, "{}", value)
-        }
+        };
+        return result;
     }
 
     /// Writes a boolean, respecting [`PerfConvertOptions::BoolOutOfRangeAsString`]. e.g. `true`,
@@ -787,7 +789,7 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
     /// signed integer, but the parameter is a `u32` because bool8 and bool16 should NOT be
     /// sign-extended.
     pub fn write_bool(&mut self, value: u32) -> fmt::Result {
-        match value {
+        let result = match value {
             0 => self.dest.write_str("false"),
             1 => self.dest.write_str("true"),
             _ => {
@@ -797,7 +799,8 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
                     write!(self.dest, "{}", value as i32)
                 }
             }
-        }
+        };
+        return result;
     }
 
     /// Writes a boolean, respecting [`PerfConvertOptions::BoolOutOfRangeAsString`]. e.g. `true`,
@@ -805,7 +808,7 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
     /// signed integer, but the parameter is a `u32` because bool8 and bool16 should NOT be
     /// sign-extended.
     pub fn write_json_bool(&mut self, value: u32) -> fmt::Result {
-        match value {
+        let result = match value {
             0 => self.dest.write_str("false"),
             1 => self.dest.write_str("true"),
             _ => {
@@ -815,19 +818,21 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
                     write!(self.dest, "{}", value as i32)
                 }
             }
-        }
+        };
+        return result;
     }
 
     /// Writes an errno, respecting [`PerfConvertOptions::ErrnoUnknownAsString`],
     /// e.g. `ENOENT(2)`, `ERRNO(-12)`, or `-12`.
     pub fn write_errno(&mut self, value: u32) -> fmt::Result {
-        if value < Self::ERRNO_STRINGS.len() as u32 {
+        let result = if value < Self::ERRNO_STRINGS.len() as u32 {
             self.dest.write_str(Self::ERRNO_STRINGS[value as usize])
         } else if self.options.has(PerfConvertOptions::ErrnoUnknownAsString) {
             write!(self.dest, "ERRNO({})", value as i32)
         } else {
             write!(self.dest, "{}", value as i32)
-        }
+        };
+        return result;
     }
 
     /// Writes an errno, respecting [`PerfConvertOptions::ErrnoKnownAsString`] and
@@ -903,43 +908,46 @@ impl<'wri, W: fmt::Write> ValueWriter<'wri, W> {
 
     /// Writes an `f32`, respecting [`PerfConvertOptions::FloatExtraPrecision`] flag.
     pub fn write_float32(&mut self, value: f32) -> fmt::Result {
-        if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
+        return if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
             write!(self.dest, "{:.9}", value)
         } else {
             write!(self.dest, "{}", value)
-        }
+        };
     }
 
     /// Writes an `f32`, respecting [`PerfConvertOptions::FloatExtraPrecision`] and
     /// [`PerfConvertOptions::FloatNonFiniteAsString`] flags.
     pub fn write_json_float32(&mut self, value: f32) -> fmt::Result {
-        if value.is_finite() {
+        let result = if value.is_finite() {
             self.write_float32(value)
         } else if self.options.has(PerfConvertOptions::FloatNonFiniteAsString) {
             write!(self.dest, "\"{}\"", value)
         } else {
             self.dest.write_str("null")
-        }
+        };
+        return result;
     }
 
     /// Writes an `f64`, respecting [`PerfConvertOptions::FloatExtraPrecision`] flag.
     pub fn write_float64(&mut self, value: f64) -> fmt::Result {
-        if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
+        let result = if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
             write!(self.dest, "{:.17}", value)
         } else {
             write!(self.dest, "{}", value)
-        }
+        };
+        return result;
     }
 
     /// Writes an `f64`, respecting [`PerfConvertOptions::FloatExtraPrecision`] and
     /// [`PerfConvertOptions::FloatNonFiniteAsString`] flags.
     pub fn write_json_float64(&mut self, value: f64) -> fmt::Result {
-        if value.is_finite() {
+        let result = if value.is_finite() {
             self.write_float64(value)
         } else if self.options.has(PerfConvertOptions::FloatNonFiniteAsString) {
             write!(self.dest, "\"{}\"", value)
         } else {
             self.dest.write_str("null")
-        }
+        };
+        return result;
     }
 }

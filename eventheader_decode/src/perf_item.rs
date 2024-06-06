@@ -39,25 +39,31 @@ impl PerfTextEncoding {
     /// the given bytes. If no BOM is present, returns `(None, 0)`.
     pub fn from_bom(bytes: &[u8]) -> (Option<Self>, u8) {
         let len = bytes.len();
-        if len >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF
+        let result = if len >= 4
+            && bytes[0] == 0x00
+            && bytes[1] == 0x00
+            && bytes[2] == 0xFE
+            && bytes[3] == 0xFF
         {
-            return (Some(Self::Utf32BE), 4);
+            (Some(Self::Utf32BE), 4)
         } else if len >= 4
             && bytes[0] == 0xFF
             && bytes[1] == 0xFE
             && bytes[2] == 0x00
             && bytes[3] == 0x00
         {
-            return (Some(Self::Utf32LE), 4);
+            (Some(Self::Utf32LE), 4)
         } else if len >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
-            return (Some(Self::Utf16BE), 2);
+            (Some(Self::Utf16BE), 2)
         } else if len >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
-            return (Some(Self::Utf16LE), 2);
+            (Some(Self::Utf16LE), 2)
         } else if len >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF {
-            return (Some(Self::Utf8), 3);
+            (Some(Self::Utf8), 3)
         } else {
-            return (None, 0);
-        }
+            (None, 0)
+        };
+
+        return result;
     }
 }
 
@@ -411,6 +417,7 @@ impl PerfItemMetadata {
         } else {
             0
         };
+
         return Self {
             element_count,
             field_tag,
@@ -427,19 +434,19 @@ impl PerfItemMetadata {
     /// For non-array or for element of an array, this is 1.
     /// This may be 0 in the case of a variable-length array of length 0.
     pub const fn element_count(&self) -> u16 {
-        self.element_count
+        return self.element_count;
     }
 
     /// Field tag, or 0 if none.
     pub const fn field_tag(&self) -> u16 {
-        self.field_tag
+        return self.field_tag;
     }
 
     /// For simple encodings (e.g. Value8, Value16, Value32, Value64, Value128),
     /// this is the size of one element in bytes (1, 2, 4, 8, 16). For complex types
     /// (e.g. Struct or string), this is 0.
     pub const fn type_size(&self) -> u8 {
-        self.type_size
+        return self.type_size;
     }
 
     /// Item's underlying encoding. The encoding indicates how to determine the item's
@@ -447,20 +454,20 @@ impl PerfItemMetadata {
     /// the specified format is `Default` (0), unrecognized, or unsupported. The value
     /// returned by this property does not include any flags.
     pub const fn encoding(&self) -> FieldEncoding {
-        self.encoding_and_array_flag_and_is_scalar.without_flags()
+        return self.encoding_and_array_flag_and_is_scalar.without_flags();
     }
 
     /// Returns the field's `CArrayFlag` or `VArrayFlag` if the item represents an array-begin
     /// field, an array-end field, or an element within an array field.
     /// Returns 0 for a non-array item.
     pub const fn array_flag(&self) -> u8 {
-        self.encoding_and_array_flag_and_is_scalar.array_flags()
+        return self.encoding_and_array_flag_and_is_scalar.array_flags();
     }
 
     /// Returns true if this item is a scalar (a non-array field or a single element of an array field).
     /// Returns false if this item is an array (an array-begin or an array-end item).
     pub const fn is_scalar(&self) -> bool {
-        self.encoding_and_array_flag_and_is_scalar.has_chain_flag()
+        return self.encoding_and_array_flag_and_is_scalar.has_chain_flag();
     }
 
     /// Returns true if this item represents an element within an array.
@@ -474,25 +481,25 @@ impl PerfItemMetadata {
     /// Field's semantic type. May be `Default`.
     /// Meaningful only when `encoding() != Struct` (`format` is aliased with `struct_field_count`).
     pub const fn format(&self) -> FieldFormat {
-        self.format
+        return self.format;
     }
 
     /// Number of fields in the struct. Should never be 0.
     /// Meaningful only when `encoding() == Struct` (`struct_field_count` is aliased with `format`).
     pub const fn struct_field_count(&self) -> u8 {
-        self.format.as_int()
+        return self.format.as_int();
     }
 
     /// A [`PerfByteReader`] that can be used to fix the byte order of this item's data.
     /// This is the same as `PerfByteReader::new(self.source_big_endian())`.
     pub const fn byte_reader(&self) -> PerfByteReader {
-        self.byte_reader
+        return self.byte_reader;
     }
 
     /// True if this item's data uses big-endian byte order.
     /// This is the same as `self.byte_reader().source_big_endian()`.
     pub const fn source_big_endian(&self) -> bool {
-        self.byte_reader.source_big_endian()
+        return self.byte_reader.source_big_endian();
     }
 }
 
@@ -600,131 +607,131 @@ impl<'dat> PerfItemValue<'dat> {
     /// of variable-size elements, in which case you must access the individual
     /// sub-items using the event's enumerator.
     pub fn bytes(&self) -> &'dat [u8] {
-        self.bytes
+        return self.bytes;
     }
 
     /// The metadata (type, endian, tag) of this item.
     pub fn metadata(&self) -> PerfItemMetadata {
-        self.metadata
+        return self.metadata;
     }
 
     /// A [`PerfByteReader`] that can be used to fix the byte order of this item's data.
     /// This is the same as `self.metadata().byte_reader()`.
     pub fn byte_reader(&self) -> PerfByteReader {
-        self.metadata.byte_reader()
+        return self.metadata.byte_reader();
     }
 
     /// True if this item's data uses big-endian byte order.
     /// This is the same as `self.byte_reader().source_big_endian()`.
     pub fn source_big_endian(&self) -> bool {
-        self.metadata.source_big_endian()
+        return self.metadata.source_big_endian();
     }
 
     /// For [`FieldEncoding::Value8`]: gets a 1-byte array starting at offset `index * 1`.
     pub fn to_u8x1(&self, index: usize) -> &'dat [u8; 1] {
-        array::from_ref(&self.bytes[index])
+        return array::from_ref(&self.bytes[index]);
     }
 
     /// For [`FieldEncoding::Value16`]: gets a 2-byte array starting at offset `index * 2`.
     pub fn to_u8x2(&self, index: usize) -> &'dat [u8; 2] {
         const SIZE: usize = 2;
-        self.bytes[index * SIZE..index * SIZE + SIZE]
+        return self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
-            .unwrap()
+            .unwrap();
     }
 
     /// For [`FieldEncoding::Value32`]: gets a 4-byte array starting at offset `index * 4`.
     pub fn to_u8x4(&self, index: usize) -> &'dat [u8; 4] {
         const SIZE: usize = 4;
-        self.bytes[index * SIZE..index * SIZE + SIZE]
+        return self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
-            .unwrap()
+            .unwrap();
     }
 
     /// For [`FieldEncoding::Value64`]: gets a 8-byte array starting at offset `index * 8`.
     pub fn to_u8x8(&self, index: usize) -> &'dat [u8; 8] {
         const SIZE: usize = 8;
-        self.bytes[index * SIZE..index * SIZE + SIZE]
+        return self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
-            .unwrap()
+            .unwrap();
     }
 
     /// For [`FieldEncoding::Value128`]: gets a 16-byte array starting at offset `index * 16`.
     pub fn to_u8x16(&self, index: usize) -> &'dat [u8; 16] {
         const SIZE: usize = 16;
-        self.bytes[index * SIZE..index * SIZE + SIZE]
+        return self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
-            .unwrap()
+            .unwrap();
     }
 
     /// For [`FieldEncoding::Value8`]: gets a `u8` value starting at offset `index * 1`.
     pub fn to_u8(&self, index: usize) -> u8 {
-        self.bytes[index]
+        return self.bytes[index];
     }
 
     /// For [`FieldEncoding::Value8`]: gets an `i8` value starting at offset `index * 1`.
     pub fn to_i8(&self, index: usize) -> i8 {
-        self.bytes[index] as i8
+        return self.bytes[index] as i8;
     }
 
     /// For [`FieldEncoding::Value16`]: gets a `u16` value starting at offset `index * 2`.
     pub fn to_u16(&self, index: usize) -> u16 {
-        self.metadata.byte_reader.read_u16(&self.bytes[index * 2..])
+        return self.metadata.byte_reader.read_u16(&self.bytes[index * 2..]);
     }
 
     /// For [`FieldEncoding::Value16`]: gets an `i16` value starting at offset `index * 2`.
     pub fn to_i16(&self, index: usize) -> i16 {
-        self.metadata.byte_reader.read_i16(&self.bytes[index * 2..])
+        return self.metadata.byte_reader.read_i16(&self.bytes[index * 2..]);
     }
 
     /// For [`FieldEncoding::Value32`]: gets a `u32` value starting at offset `index * 4`.
     pub fn to_u32(&self, index: usize) -> u32 {
-        self.metadata.byte_reader.read_u32(&self.bytes[index * 4..])
+        return self.metadata.byte_reader.read_u32(&self.bytes[index * 4..]);
     }
 
     /// For [`FieldEncoding::Value32`]: gets an `i32` value starting at offset `index * 4`.
     pub fn to_i32(&self, index: usize) -> i32 {
-        self.metadata.byte_reader.read_i32(&self.bytes[index * 4..])
+        return self.metadata.byte_reader.read_i32(&self.bytes[index * 4..]);
     }
 
     /// For [`FieldEncoding::Value64`]: gets a `u64` value starting at offset `index * 8`.
     pub fn to_u64(&self, index: usize) -> u64 {
-        self.metadata.byte_reader.read_u64(&self.bytes[index * 8..])
+        return self.metadata.byte_reader.read_u64(&self.bytes[index * 8..]);
     }
 
     /// For [`FieldEncoding::Value64`]: gets an `i64` value starting at offset `index * 8`.
     pub fn to_i64(&self, index: usize) -> i64 {
-        self.metadata.byte_reader.read_i64(&self.bytes[index * 8..])
+        return self.metadata.byte_reader.read_i64(&self.bytes[index * 8..]);
     }
 
     /// For [`FieldEncoding::Value32`]: gets an `f32` value starting at offset `index * 4`.
     pub fn to_f32(&self, index: usize) -> f32 {
-        self.metadata.byte_reader.read_f32(&self.bytes[index * 4..])
+        return self.metadata.byte_reader.read_f32(&self.bytes[index * 4..]);
     }
 
     /// For [`FieldEncoding::Value64`]: gets an `f64` value starting at offset `index * 8`.
     pub fn to_f64(&self, index: usize) -> f64 {
-        self.metadata.byte_reader.read_f64(&self.bytes[index * 8..])
+        return self.metadata.byte_reader.read_f64(&self.bytes[index * 8..]);
     }
 
     /// For [`FieldEncoding::Value128`]: gets a big-endian [`Guid`] value starting at offset `index * 16`.
     pub fn to_guid(&self, index: usize) -> Guid {
         const SIZE: usize = 16;
-        Guid::from_bytes_be(
+        return Guid::from_bytes_be(
             &self.bytes[index * SIZE..index * SIZE + SIZE]
                 .try_into()
                 .unwrap(),
-        )
+        );
     }
 
     /// For [`FieldEncoding::Value16`]: gets a big-endian `u16` value starting at offset `index * 2`.
     pub fn to_port(&self, index: usize) -> u16 {
         const SIZE: usize = 2;
-        u16::from_be_bytes(
+        return u16::from_be_bytes(
             self.bytes[index * SIZE..index * SIZE + SIZE]
                 .try_into()
                 .unwrap(),
-        )
+        );
     }
 
     /// For [`FieldEncoding::Value32`]: gets an [`net::Ipv4Addr`] value starting at offset `index * 4`.
@@ -734,7 +741,7 @@ impl<'dat> PerfItemValue<'dat> {
         let bits: [u8; SIZE] = self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
             .unwrap();
-        net::Ipv4Addr::new(bits[0], bits[1], bits[2], bits[3])
+        return net::Ipv4Addr::new(bits[0], bits[1], bits[2], bits[3]);
     }
 
     /// For [`FieldEncoding::Value128`]: gets an [`net::Ipv6Addr`] value starting at offset `index * 16`.
@@ -744,7 +751,7 @@ impl<'dat> PerfItemValue<'dat> {
         let bits: &[u8; SIZE] = self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
             .unwrap();
-        net::Ipv6Addr::new(
+        return net::Ipv6Addr::new(
             u16::from_be_bytes(bits[0..2].try_into().unwrap()),
             u16::from_be_bytes(bits[2..4].try_into().unwrap()),
             u16::from_be_bytes(bits[4..6].try_into().unwrap()),
@@ -753,17 +760,17 @@ impl<'dat> PerfItemValue<'dat> {
             u16::from_be_bytes(bits[10..12].try_into().unwrap()),
             u16::from_be_bytes(bits[12..14].try_into().unwrap()),
             u16::from_be_bytes(bits[14..16].try_into().unwrap()),
-        )
+        );
     }
 
     /// For [`FieldEncoding::Value32`]: gets an `i32` value starting at offset `index * 4`.
     pub fn to_time32(&self, index: usize) -> i32 {
-        self.metadata.byte_reader.read_i32(&self.bytes[index * 4..])
+        return self.metadata.byte_reader.read_i32(&self.bytes[index * 4..]);
     }
 
     /// For [`FieldEncoding::Value64`]: gets an `i64` value starting at offset `index * 8`.
     pub fn to_time64(&self, index: usize) -> i64 {
-        self.metadata.byte_reader.read_i64(&self.bytes[index * 8..])
+        return self.metadata.byte_reader.read_i64(&self.bytes[index * 8..]);
     }
 
     /// Interprets the value as a string and returns the string's encoded bytes along
@@ -825,10 +832,10 @@ impl<'dat> PerfItemValue<'dat> {
     /// - For UTF-8, invalid UTF-8 byte sequences will be treated as Latin-1 sequences.
     /// - For UTF-16 and UTF-32, invalid code units will be replaced with the Unicode
     ///   replacement character (U+FFFD).
-    pub fn write_string_to<W: fmt::Write>(&self, writer: &mut W) -> fmt::Result {
+    pub fn write_string_to<W: fmt::Write + ?Sized>(&self, writer: &mut W) -> fmt::Result {
         let (bytes, enc) = self.to_string_bytes();
         let mut writer = filters::WriteFilter::new(writer); // Shadow
-        return match enc {
+        let result = match enc {
             PerfTextEncoding::Latin1 => charconv::write_latin1_to(bytes, &mut writer),
             PerfTextEncoding::Utf8 => {
                 charconv::write_utf8_with_latin1_fallback_to(bytes, &mut writer)
@@ -838,6 +845,8 @@ impl<'dat> PerfItemValue<'dat> {
             PerfTextEncoding::Utf32BE => charconv::write_utf32be_to(bytes, &mut writer),
             PerfTextEncoding::Utf32LE => charconv::write_utf32le_to(bytes, &mut writer),
         };
+
+        return result;
     }
 
     /// Writes a string representation of this value to the writer.
@@ -845,16 +854,18 @@ impl<'dat> PerfItemValue<'dat> {
     /// If this value is a scalar, this behaves like `write_scalar_to`.
     ///
     /// If thie value is an array, this behaves like `write_simple_array_to`.
-    pub fn write_to<W: fmt::Write>(
+    pub fn write_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut W,
         convert_options: PerfConvertOptions,
     ) -> fmt::Result {
-        if self.metadata.is_scalar() {
-            return self.write_scalar_to(writer, convert_options);
+        let result = if self.metadata.is_scalar() {
+            self.write_scalar_to(writer, convert_options)
         } else {
-            return self.write_simple_array_to(writer, convert_options);
-        }
+            self.write_simple_array_to(writer, convert_options)
+        };
+
+        return result;
     }
 
     /// Interprets this as a scalar and writes a string representation to the writer.
@@ -869,7 +880,7 @@ impl<'dat> PerfItemValue<'dat> {
     ///   filtered based on the flags in `convert_options` (kept, replaced with space,
     ///   or JSON-escaped).
     /// - If the value is a struct, writes `Struct[N]`, where `N` is the number of fields in the struct.
-    pub fn write_scalar_to<W: fmt::Write>(
+    pub fn write_scalar_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut W,
         convert_options: PerfConvertOptions,
@@ -877,49 +888,43 @@ impl<'dat> PerfItemValue<'dat> {
         debug_assert!(self.metadata.type_size as usize <= self.bytes.len());
 
         let mut writer = writers::ValueWriter::new(writer, convert_options); // Shadow
-        match self.metadata.encoding() {
-            FieldEncoding::Invalid => return writer.write_str_with_no_filter("null"),
-            FieldEncoding::Struct => {
-                return writer.write_fmt_with_no_filter(format_args!(
-                    "Struct[{}]",
-                    self.metadata.struct_field_count()
-                ))
-            }
-            FieldEncoding::Value8 => return self.write_value8_to(&mut writer, 0),
-            FieldEncoding::Value16 => return self.write_value16_to(&mut writer, 0),
-            FieldEncoding::Value32 => return self.write_value32_to(&mut writer, 0),
-            FieldEncoding::Value64 => return self.write_value64_to(&mut writer, 0),
-            FieldEncoding::Value128 => return self.write_value128_to(&mut writer, 0),
+        let result = match self.metadata.encoding() {
+            FieldEncoding::Invalid => writer.write_str_with_no_filter("null"),
+            FieldEncoding::Struct => writer.write_fmt_with_no_filter(format_args!(
+                "Struct[{}]",
+                self.metadata.struct_field_count()
+            )),
+            FieldEncoding::Value8 => self.write_value8_to(&mut writer, 0),
+            FieldEncoding::Value16 => self.write_value16_to(&mut writer, 0),
+            FieldEncoding::Value32 => self.write_value32_to(&mut writer, 0),
+            FieldEncoding::Value64 => self.write_value64_to(&mut writer, 0),
+            FieldEncoding::Value128 => self.write_value128_to(&mut writer, 0),
             FieldEncoding::ZStringChar8 | FieldEncoding::StringLength16Char8 => {
-                return self.write_scalar_string_to(&mut writer, PerfTextEncoding::Utf8);
+                self.write_scalar_string_to(&mut writer, PerfTextEncoding::Utf8)
             }
-            FieldEncoding::ZStringChar16 | FieldEncoding::StringLength16Char16 => {
-                return self.write_scalar_string_to(
+            FieldEncoding::ZStringChar16 | FieldEncoding::StringLength16Char16 => self
+                .write_scalar_string_to(
                     &mut writer,
                     if self.metadata.byte_reader.source_big_endian() {
                         PerfTextEncoding::Utf16BE
                     } else {
                         PerfTextEncoding::Utf16LE
                     },
-                );
-            }
-            FieldEncoding::ZStringChar32 | FieldEncoding::StringLength16Char32 => {
-                return self.write_scalar_string_to(
+                ),
+            FieldEncoding::ZStringChar32 | FieldEncoding::StringLength16Char32 => self
+                .write_scalar_string_to(
                     &mut writer,
                     if self.metadata.byte_reader.source_big_endian() {
                         PerfTextEncoding::Utf32BE
                     } else {
                         PerfTextEncoding::Utf32LE
                     },
-                );
-            }
-            _ => {
-                return writer.write_fmt_with_no_filter(format_args!(
-                    "Encoding[{}]",
-                    self.metadata.encoding()
-                ))
-            }
+                ),
+            _ => writer
+                .write_fmt_with_no_filter(format_args!("Encoding[{}]", self.metadata.encoding())),
         };
+
+        return result;
     }
 
     /// Interprets this as the beginning of an array of simple type.
@@ -930,7 +935,7 @@ impl<'dat> PerfItemValue<'dat> {
     /// Requires `index <= bytes.len() / type_size`.
     ///
     /// The element is formatted as described for `write_scalar_to`.
-    pub fn write_simple_element_to<W: fmt::Write>(
+    pub fn write_simple_element_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut W,
         index: usize,
@@ -941,19 +946,17 @@ impl<'dat> PerfItemValue<'dat> {
         debug_assert!((index + 1) * self.metadata.type_size as usize <= self.bytes.len());
 
         let mut writer = writers::ValueWriter::new(writer, convert_options); // Shadow
-        match self.metadata.encoding() {
-            FieldEncoding::Value8 => return self.write_value8_to(&mut writer, index),
-            FieldEncoding::Value16 => return self.write_value16_to(&mut writer, index),
-            FieldEncoding::Value32 => return self.write_value32_to(&mut writer, index),
-            FieldEncoding::Value64 => return self.write_value64_to(&mut writer, index),
-            FieldEncoding::Value128 => return self.write_value128_to(&mut writer, index),
-            _ => {
-                return writer.write_fmt_with_no_filter(format_args!(
-                    "Encoding[{}]",
-                    self.metadata.encoding()
-                ))
-            }
-        }
+        let result = match self.metadata.encoding() {
+            FieldEncoding::Value8 => self.write_value8_to(&mut writer, index),
+            FieldEncoding::Value16 => self.write_value16_to(&mut writer, index),
+            FieldEncoding::Value32 => self.write_value32_to(&mut writer, index),
+            FieldEncoding::Value64 => self.write_value64_to(&mut writer, index),
+            FieldEncoding::Value128 => self.write_value128_to(&mut writer, index),
+            _ => writer
+                .write_fmt_with_no_filter(format_args!("Encoding[{}]", self.metadata.encoding())),
+        };
+
+        return result;
     }
 
     /// Interprets this as the beginning of an array of simple type.
@@ -963,7 +966,7 @@ impl<'dat> PerfItemValue<'dat> {
     ///
     /// If this is an array-begin or array-end of complex type, this will simply write
     /// `Array[N]`, where `N` is the number of elements in the array.
-    pub fn write_simple_array_to<W: fmt::Write>(
+    pub fn write_simple_array_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut W,
         convert_options: PerfConvertOptions,
@@ -1023,12 +1026,8 @@ impl<'dat> PerfItemValue<'dat> {
                     self.write_value128_to(&mut writer, i)?;
                 }
             }
-            _ => {
-                return writer.write_fmt_with_no_filter(format_args!(
-                    "Encoding[{}]",
-                    self.metadata.encoding()
-                ))
-            }
+            _ => writer
+                .write_fmt_with_no_filter(format_args!("Encoding[{}]", self.metadata.encoding()))?,
         }
 
         return Ok(());
@@ -1039,70 +1038,75 @@ impl<'dat> PerfItemValue<'dat> {
     /// If this value is a scalar, this behaves like `write_json_scalar_to`.
     ///
     /// If thie value is an array, this behaves like `write_json_simple_array_to`.
-    pub fn write_json_to<W: fmt::Write>(
+    pub fn write_json_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut W,
         convert_options: PerfConvertOptions,
     ) -> fmt::Result {
-        if self.metadata.is_scalar() {
-            return self.write_json_scalar_to(writer, convert_options);
+        let result = if self.metadata.is_scalar() {
+            self.write_json_scalar_to(writer, convert_options)
         } else {
-            return self.write_json_simple_array_to(writer, convert_options);
-        }
+            self.write_json_simple_array_to(writer, convert_options)
+        };
+
+        return result;
     }
 
     /// Interprets this as a scalar and writes a JSON representation to the writer.
     ///
     /// If this value is a struct, the value will be written as `{}`.
     /// Structs need to be processed by the enumerator.
-    pub fn write_json_scalar_to<W: fmt::Write>(
+    pub fn write_json_scalar_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut W,
         convert_options: PerfConvertOptions,
     ) -> fmt::Result {
+        let mut writer = writers::ValueWriter::new(writer, convert_options);
+        return self.write_json_scalar_to_impl(&mut writer);
+    }
+
+    pub(crate) fn write_json_scalar_to_impl<W: fmt::Write + ?Sized>(
+        &self,
+        writer: &mut writers::ValueWriter<W>,
+    ) -> fmt::Result {
         debug_assert!(self.metadata.type_size as usize <= self.bytes.len());
 
-        let mut writer = writers::ValueWriter::new(writer, convert_options); // Shadow
-        match self.metadata.encoding() {
-            FieldEncoding::Invalid => return writer.write_str_with_no_filter("null"),
-            FieldEncoding::Struct => {
-                return writer.write_str_with_no_filter("{}");
-            }
-            FieldEncoding::Value8 => return self.write_json_value8_to(&mut writer, 0),
-            FieldEncoding::Value16 => return self.write_json_value16_to(&mut writer, 0),
-            FieldEncoding::Value32 => return self.write_json_value32_to(&mut writer, 0),
-            FieldEncoding::Value64 => return self.write_json_value64_to(&mut writer, 0),
-            FieldEncoding::Value128 => return self.write_json_value128_to(&mut writer, 0),
+        let result = match self.metadata.encoding() {
+            FieldEncoding::Invalid => writer.write_str_with_no_filter("null"),
+            FieldEncoding::Struct => writer.write_str_with_no_filter("{}"),
+            FieldEncoding::Value8 => self.write_json_value8_to(writer, 0),
+            FieldEncoding::Value16 => self.write_json_value16_to(writer, 0),
+            FieldEncoding::Value32 => self.write_json_value32_to(writer, 0),
+            FieldEncoding::Value64 => self.write_json_value64_to(writer, 0),
+            FieldEncoding::Value128 => self.write_json_value128_to(writer, 0),
             FieldEncoding::ZStringChar8 | FieldEncoding::StringLength16Char8 => {
-                return self.write_json_scalar_string_to(&mut writer, PerfTextEncoding::Utf8);
+                self.write_json_scalar_string_to(writer, PerfTextEncoding::Utf8)
             }
-            FieldEncoding::ZStringChar16 | FieldEncoding::StringLength16Char16 => {
-                return self.write_json_scalar_string_to(
-                    &mut writer,
+            FieldEncoding::ZStringChar16 | FieldEncoding::StringLength16Char16 => self
+                .write_json_scalar_string_to(
+                    writer,
                     if self.metadata.byte_reader.source_big_endian() {
                         PerfTextEncoding::Utf16BE
                     } else {
                         PerfTextEncoding::Utf16LE
                     },
-                );
-            }
-            FieldEncoding::ZStringChar32 | FieldEncoding::StringLength16Char32 => {
-                return self.write_json_scalar_string_to(
-                    &mut writer,
+                ),
+            FieldEncoding::ZStringChar32 | FieldEncoding::StringLength16Char32 => self
+                .write_json_scalar_string_to(
+                    writer,
                     if self.metadata.byte_reader.source_big_endian() {
                         PerfTextEncoding::Utf32BE
                     } else {
                         PerfTextEncoding::Utf32LE
                     },
-                );
-            }
-            _ => {
-                return writer.write_fmt_with_no_filter(format_args!(
-                    "\"Encoding[{}]\"",
-                    self.metadata.encoding()
-                ))
-            }
+                ),
+            _ => writer.write_fmt_with_no_filter(format_args!(
+                "\"Encoding[{}]\"",
+                self.metadata.encoding()
+            )),
         };
+
+        return result;
     }
 
     /// Interprets this as the beginning of an array of simple type.
@@ -1113,7 +1117,7 @@ impl<'dat> PerfItemValue<'dat> {
     /// Requires `index <= bytes.len() / type_size`.
     ///
     /// The element is formatted as described for `write_json_scalar_to`.
-    pub fn write_json_simple_element_to<W: fmt::Write>(
+    pub fn write_json_simple_element_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut W,
         index: usize,
@@ -1124,19 +1128,19 @@ impl<'dat> PerfItemValue<'dat> {
         debug_assert!((index + 1) * self.metadata.type_size as usize <= self.bytes.len());
 
         let mut writer = writers::ValueWriter::new(writer, convert_options); // Shadow
-        match self.metadata.encoding() {
-            FieldEncoding::Value8 => return self.write_json_value8_to(&mut writer, index),
-            FieldEncoding::Value16 => return self.write_json_value16_to(&mut writer, index),
-            FieldEncoding::Value32 => return self.write_json_value32_to(&mut writer, index),
-            FieldEncoding::Value64 => return self.write_json_value64_to(&mut writer, index),
-            FieldEncoding::Value128 => return self.write_json_value128_to(&mut writer, index),
-            _ => {
-                return writer.write_fmt_with_no_filter(format_args!(
-                    "\"Encoding[{}]\"",
-                    self.metadata.encoding()
-                ))
-            }
-        }
+        let result = match self.metadata.encoding() {
+            FieldEncoding::Value8 => self.write_json_value8_to(&mut writer, index),
+            FieldEncoding::Value16 => self.write_json_value16_to(&mut writer, index),
+            FieldEncoding::Value32 => self.write_json_value32_to(&mut writer, index),
+            FieldEncoding::Value64 => self.write_json_value64_to(&mut writer, index),
+            FieldEncoding::Value128 => self.write_json_value128_to(&mut writer, index),
+            _ => writer.write_fmt_with_no_filter(format_args!(
+                "\"Encoding[{}]\"",
+                self.metadata.encoding()
+            )),
+        };
+
+        return result;
     }
 
     /// Interprets this as the beginning of an array of simple type.
@@ -1146,14 +1150,21 @@ impl<'dat> PerfItemValue<'dat> {
     ///
     /// If this value is an array of complex type, the value will be written as `[]`.
     /// Complex arrays need to be processed by the enumerator.
-    pub fn write_json_simple_array_to<W: fmt::Write>(
+    pub fn write_json_simple_array_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut W,
         convert_options: PerfConvertOptions,
     ) -> fmt::Result {
+        let mut json = writers::JsonWriter::new(writer, convert_options, false);
+        return self.write_json_simple_array_to_impl(&mut json);
+    }
+
+    pub(crate) fn write_json_simple_array_to_impl<W: fmt::Write + ?Sized>(
+        &self,
+        json: &mut writers::JsonWriter<W>,
+    ) -> fmt::Result {
         debug_assert!(self.metadata.type_size != 0);
 
-        let mut json = writers::JsonWriter::new(writer, convert_options, false);
         json.write_array_begin()?;
         match self.metadata.encoding() {
             FieldEncoding::Value8 => {
@@ -1197,211 +1208,193 @@ impl<'dat> PerfItemValue<'dat> {
         return json.write_array_end();
     }
 
-    fn write_value8_to<W: fmt::Write>(
+    fn write_value8_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
-            FieldFormat::SignedInt => {
-                return writer.write_display_with_no_filter(self.to_i8(index) as i32)
-            }
-            FieldFormat::HexInt => return writer.write_hex32(self.to_u8(index) as u32),
-            FieldFormat::Boolean => return writer.write_bool(self.to_u8(index) as u32),
-            FieldFormat::HexBytes => return writer.write_hexbytes(self.to_u8x1(index)),
+        return match self.metadata.format.without_flags() {
+            FieldFormat::SignedInt => writer.write_display_with_no_filter(self.to_i8(index) as i32),
+            FieldFormat::HexInt => writer.write_hex32(self.to_u8(index) as u32),
+            FieldFormat::Boolean => writer.write_bool(self.to_u8(index) as u32),
+            FieldFormat::HexBytes => writer.write_hexbytes(self.to_u8x1(index)),
             FieldFormat::String8 => {
-                return writer.write_latin1_with_control_chars_filter(self.to_u8x1(index))
+                writer.write_latin1_with_control_chars_filter(self.to_u8x1(index))
             }
-            _ => return writer.write_display_with_no_filter(self.to_u8(index) as u32), // Default, UnsignedInt
-        }
+            _ => writer.write_display_with_no_filter(self.to_u8(index) as u32), // Default, UnsignedInt
+        };
     }
 
-    fn write_json_value8_to<W: fmt::Write>(
+    fn write_json_value8_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
-            FieldFormat::SignedInt => {
-                return writer.write_display_with_no_filter(self.to_i8(index) as i32)
-            }
-            FieldFormat::HexInt => return writer.write_json_hex32(self.to_u8(index) as u32),
-            FieldFormat::Boolean => return writer.write_json_bool(self.to_u8(index) as u32),
-            FieldFormat::HexBytes => {
-                return writer.write_quoted(|w| w.write_hexbytes(self.to_u8x1(index)))
-            }
+        return match self.metadata.format.without_flags() {
+            FieldFormat::SignedInt => writer.write_display_with_no_filter(self.to_i8(index) as i32),
+            FieldFormat::HexInt => writer.write_json_hex32(self.to_u8(index) as u32),
+            FieldFormat::Boolean => writer.write_json_bool(self.to_u8(index) as u32),
+            FieldFormat::HexBytes => writer.write_quoted(|w| w.write_hexbytes(self.to_u8x1(index))),
             FieldFormat::String8 => {
-                return writer
-                    .write_quoted(|w| w.write_latin1_with_json_escape(self.to_u8x1(index)))
+                writer.write_quoted(|w| w.write_latin1_with_json_escape(self.to_u8x1(index)))
             }
-            _ => return writer.write_display_with_no_filter(self.to_u8(index) as u32), // Default, UnsignedInt
-        }
+            _ => writer.write_display_with_no_filter(self.to_u8(index) as u32), // Default, UnsignedInt
+        };
     }
 
-    fn write_value16_to<W: fmt::Write>(
+    fn write_value16_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
+        return match self.metadata.format.without_flags() {
             FieldFormat::SignedInt => {
-                return writer.write_display_with_no_filter(self.to_i16(index) as i32)
+                writer.write_display_with_no_filter(self.to_i16(index) as i32)
             }
-            FieldFormat::HexInt => return writer.write_hex32(self.to_u16(index) as u32),
-            FieldFormat::Boolean => return writer.write_bool(self.to_u16(index) as u32),
-            FieldFormat::HexBytes => return writer.write_hexbytes(self.to_u8x2(index)),
+            FieldFormat::HexInt => writer.write_hex32(self.to_u16(index) as u32),
+            FieldFormat::Boolean => writer.write_bool(self.to_u16(index) as u32),
+            FieldFormat::HexBytes => writer.write_hexbytes(self.to_u8x2(index)),
             FieldFormat::StringUtf => {
-                return writer.write_char32_with_control_chars_filter(self.to_u16(index) as u32)
+                writer.write_char32_with_control_chars_filter(self.to_u16(index) as u32)
             }
-            FieldFormat::Port => {
-                return writer.write_display_with_no_filter(self.to_port(index) as u32)
-            }
-            _ => return writer.write_display_with_no_filter(self.to_u16(index) as u32), // Default, UnsignedInt
-        }
+            FieldFormat::Port => writer.write_display_with_no_filter(self.to_port(index) as u32),
+            _ => writer.write_display_with_no_filter(self.to_u16(index) as u32), // Default, UnsignedInt
+        };
     }
 
-    fn write_json_value16_to<W: fmt::Write>(
+    fn write_json_value16_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
+        return match self.metadata.format.without_flags() {
             FieldFormat::SignedInt => {
-                return writer.write_display_with_no_filter(self.to_i16(index) as i32)
+                writer.write_display_with_no_filter(self.to_i16(index) as i32)
             }
-            FieldFormat::HexInt => return writer.write_json_hex32(self.to_u16(index) as u32),
-            FieldFormat::Boolean => return writer.write_json_bool(self.to_u16(index) as u32),
-            FieldFormat::HexBytes => {
-                return writer.write_quoted(|w| w.write_hexbytes(self.to_u8x2(index)))
-            }
+            FieldFormat::HexInt => writer.write_json_hex32(self.to_u16(index) as u32),
+            FieldFormat::Boolean => writer.write_json_bool(self.to_u16(index) as u32),
+            FieldFormat::HexBytes => writer.write_quoted(|w| w.write_hexbytes(self.to_u8x2(index))),
             FieldFormat::StringUtf => {
-                return writer
-                    .write_quoted(|w| w.write_char32_with_json_escape(self.to_u16(index) as u32))
+                writer.write_quoted(|w| w.write_char32_with_json_escape(self.to_u16(index) as u32))
             }
-            FieldFormat::Port => {
-                return writer.write_display_with_no_filter(self.to_port(index) as u32)
-            }
-            _ => return writer.write_display_with_no_filter(self.to_u16(index) as u32), // Default, UnsignedInt
-        }
+            FieldFormat::Port => writer.write_display_with_no_filter(self.to_port(index) as u32),
+            _ => writer.write_display_with_no_filter(self.to_u16(index) as u32), // Default, UnsignedInt
+        };
     }
 
-    fn write_value32_to<W: fmt::Write>(
+    fn write_value32_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
+        return match self.metadata.format.without_flags() {
             FieldFormat::SignedInt | FieldFormat::Pid => {
-                return writer.write_display_with_no_filter(self.to_i32(index))
+                writer.write_display_with_no_filter(self.to_i32(index))
             }
-            FieldFormat::HexInt => return writer.write_hex32(self.to_u32(index)),
-            FieldFormat::Errno => return writer.write_errno(self.to_u32(index)),
-            FieldFormat::Time => return writer.write_time64(self.to_time32(index) as i64),
-            FieldFormat::Boolean => return writer.write_bool(self.to_u32(index)),
-            FieldFormat::Float => return writer.write_float32(self.to_f32(index)),
-            FieldFormat::HexBytes => return writer.write_hexbytes(self.to_u8x4(index)),
+            FieldFormat::HexInt => writer.write_hex32(self.to_u32(index)),
+            FieldFormat::Errno => writer.write_errno(self.to_u32(index)),
+            FieldFormat::Time => writer.write_time64(self.to_time32(index) as i64),
+            FieldFormat::Boolean => writer.write_bool(self.to_u32(index)),
+            FieldFormat::Float => writer.write_float32(self.to_f32(index)),
+            FieldFormat::HexBytes => writer.write_hexbytes(self.to_u8x4(index)),
             FieldFormat::StringUtf => {
-                return writer.write_char32_with_control_chars_filter(self.to_u32(index))
+                writer.write_char32_with_control_chars_filter(self.to_u32(index))
             }
-            FieldFormat::IPv4 => return writer.write_ipv4(*self.to_u8x4(index)),
-            _ => return writer.write_display_with_no_filter(self.to_u32(index)), // Default, UnsignedInt
-        }
+            FieldFormat::IPv4 => writer.write_ipv4(*self.to_u8x4(index)),
+            _ => writer.write_display_with_no_filter(self.to_u32(index)), // Default, UnsignedInt
+        };
     }
 
-    fn write_json_value32_to<W: fmt::Write>(
+    fn write_json_value32_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
+        return match self.metadata.format.without_flags() {
             FieldFormat::SignedInt | FieldFormat::Pid => {
-                return writer.write_display_with_no_filter(self.to_i32(index))
+                writer.write_display_with_no_filter(self.to_i32(index))
             }
-            FieldFormat::HexInt => {
-                return writer.write_quoted(|w| w.write_hex32(self.to_u32(index)))
-            }
-            FieldFormat::Errno => return writer.write_json_errno(self.to_u32(index)),
-            FieldFormat::Time => return writer.write_json_time64(self.to_time32(index) as i64),
-            FieldFormat::Boolean => return writer.write_json_bool(self.to_u32(index)),
-            FieldFormat::Float => return writer.write_json_float32(self.to_f32(index)),
-            FieldFormat::HexBytes => {
-                return writer.write_quoted(|w| w.write_hexbytes(self.to_u8x4(index)))
-            }
+            FieldFormat::HexInt => writer.write_quoted(|w| w.write_hex32(self.to_u32(index))),
+            FieldFormat::Errno => writer.write_json_errno(self.to_u32(index)),
+            FieldFormat::Time => writer.write_json_time64(self.to_time32(index) as i64),
+            FieldFormat::Boolean => writer.write_json_bool(self.to_u32(index)),
+            FieldFormat::Float => writer.write_json_float32(self.to_f32(index)),
+            FieldFormat::HexBytes => writer.write_quoted(|w| w.write_hexbytes(self.to_u8x4(index))),
             FieldFormat::StringUtf => {
-                return writer.write_quoted(|w| w.write_char32_with_json_escape(self.to_u32(index)))
+                writer.write_quoted(|w| w.write_char32_with_json_escape(self.to_u32(index)))
             }
-            FieldFormat::IPv4 => return writer.write_quoted(|w| w.write_ipv4(*self.to_u8x4(index))),
-            _ => return writer.write_display_with_no_filter(self.to_u32(index)), // Default, UnsignedInt
-        }
+            FieldFormat::IPv4 => writer.write_quoted(|w| w.write_ipv4(*self.to_u8x4(index))),
+            _ => writer.write_display_with_no_filter(self.to_u32(index)), // Default, UnsignedInt
+        };
     }
 
-    fn write_value64_to<W: fmt::Write>(
+    fn write_value64_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
+        return match self.metadata.format.without_flags() {
             FieldFormat::SignedInt | FieldFormat::Pid => {
-                return writer.write_display_with_no_filter(self.to_i64(index))
+                writer.write_display_with_no_filter(self.to_i64(index))
             }
-            FieldFormat::HexInt => return writer.write_hex64(self.to_u64(index)),
-            FieldFormat::Time => return writer.write_time64(self.to_time64(index)),
-            FieldFormat::Float => return writer.write_float64(self.to_f64(index)),
-            FieldFormat::HexBytes => return writer.write_hexbytes(self.to_u8x8(index)),
-            _ => return writer.write_display_with_no_filter(self.to_u64(index)), // Default, UnsignedInt
-        }
+            FieldFormat::HexInt => writer.write_hex64(self.to_u64(index)),
+            FieldFormat::Time => writer.write_time64(self.to_time64(index)),
+            FieldFormat::Float => writer.write_float64(self.to_f64(index)),
+            FieldFormat::HexBytes => writer.write_hexbytes(self.to_u8x8(index)),
+            _ => writer.write_display_with_no_filter(self.to_u64(index)), // Default, UnsignedInt
+        };
     }
 
-    fn write_json_value64_to<W: fmt::Write>(
+    fn write_json_value64_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
+        return match self.metadata.format.without_flags() {
             FieldFormat::SignedInt | FieldFormat::Pid => {
-                return writer.write_display_with_no_filter(self.to_i64(index))
+                writer.write_display_with_no_filter(self.to_i64(index))
             }
-            FieldFormat::HexInt => return writer.write_json_hex64(self.to_u64(index)),
-            FieldFormat::Time => return writer.write_json_time64(self.to_time64(index)),
-            FieldFormat::Float => return writer.write_json_float64(self.to_f64(index)),
-            FieldFormat::HexBytes => {
-                return writer.write_quoted(|w| w.write_hexbytes(self.to_u8x8(index)))
-            }
-            _ => return writer.write_display_with_no_filter(self.to_u64(index)), // Default, UnsignedInt
-        }
+            FieldFormat::HexInt => writer.write_json_hex64(self.to_u64(index)),
+            FieldFormat::Time => writer.write_json_time64(self.to_time64(index)),
+            FieldFormat::Float => writer.write_json_float64(self.to_f64(index)),
+            FieldFormat::HexBytes => writer.write_quoted(|w| w.write_hexbytes(self.to_u8x8(index))),
+            _ => writer.write_display_with_no_filter(self.to_u64(index)), // Default, UnsignedInt
+        };
     }
 
-    fn write_value128_to<W: fmt::Write>(
+    fn write_value128_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
-            FieldFormat::Uuid => return writer.write_uuid(self.to_u8x16(index)),
+        return match self.metadata.format.without_flags() {
+            FieldFormat::Uuid => writer.write_uuid(self.to_u8x16(index)),
+
             #[cfg(feature = "rustc_1_77")]
-            FieldFormat::IPv6 => return writer.write_display_with_no_filter(self.to_ipv6(index)),
-            _ => return writer.write_hexbytes(self.to_u8x16(index)), // Default, HexBytes
-        }
+            FieldFormat::IPv6 => writer.write_display_with_no_filter(self.to_ipv6(index)),
+
+            _ => writer.write_hexbytes(self.to_u8x16(index)), // Default, HexBytes
+        };
     }
 
-    fn write_json_value128_to<W: fmt::Write>(
+    fn write_json_value128_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        match self.metadata.format.without_flags() {
-            FieldFormat::Uuid => {
-                return writer.write_quoted(|w| w.write_uuid(self.to_u8x16(index)))
-            }
+        return match self.metadata.format.without_flags() {
+            FieldFormat::Uuid => writer.write_quoted(|w| w.write_uuid(self.to_u8x16(index))),
+
             #[cfg(feature = "rustc_1_77")]
             FieldFormat::IPv6 => {
-                return writer.write_quoted(|w| w.write_display_with_no_filter(self.to_ipv6(index)))
+                writer.write_quoted(|w| w.write_display_with_no_filter(self.to_ipv6(index)))
             }
-            _ => return writer.write_quoted(|w| w.write_hexbytes(self.to_u8x16(index))), // Default, HexBytes
-        }
+
+            _ => writer.write_quoted(|w| w.write_hexbytes(self.to_u8x16(index))), // Default, HexBytes
+        };
     }
 
-    fn write_scalar_string_to<W: fmt::Write>(
+    fn write_scalar_string_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         default_encoding: PerfTextEncoding,
@@ -1426,29 +1419,17 @@ impl<'dat> PerfItemValue<'dat> {
             _ => {}
         }
 
-        match encoding {
-            PerfTextEncoding::Latin1 => {
-                return writer.write_latin1_with_control_chars_filter(bytes);
-            }
-            PerfTextEncoding::Utf8 => {
-                return writer.write_utf8_with_control_chars_filter(bytes);
-            }
-            PerfTextEncoding::Utf16BE => {
-                return writer.write_utf16be_with_control_chars_filter(bytes);
-            }
-            PerfTextEncoding::Utf16LE => {
-                return writer.write_utf16le_with_control_chars_filter(bytes);
-            }
-            PerfTextEncoding::Utf32BE => {
-                return writer.write_utf32be_with_control_chars_filter(bytes);
-            }
-            PerfTextEncoding::Utf32LE => {
-                return writer.write_utf32le_with_control_chars_filter(bytes);
-            }
-        }
+        return match encoding {
+            PerfTextEncoding::Latin1 => writer.write_latin1_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf8 => writer.write_utf8_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf16BE => writer.write_utf16be_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf16LE => writer.write_utf16le_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf32BE => writer.write_utf32be_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf32LE => writer.write_utf32le_with_control_chars_filter(bytes),
+        };
     }
 
-    fn write_json_scalar_string_to<W: fmt::Write>(
+    fn write_json_scalar_string_to<W: fmt::Write + ?Sized>(
         &self,
         writer: &mut writers::ValueWriter<W>,
         default_encoding: PerfTextEncoding,
@@ -1457,30 +1438,30 @@ impl<'dat> PerfItemValue<'dat> {
         let mut encoding = default_encoding;
         let format = self.metadata.format;
 
-        return writer.write_quoted(|w| {
-            match format {
-                FieldFormat::HexBytes => return w.write_hexbytes(bytes),
+        match format {
+            FieldFormat::HexBytes => return writer.write_quoted(|w| w.write_hexbytes(bytes)),
 
-                FieldFormat::String8 => return w.write_latin1_with_json_escape(bytes),
-
-                FieldFormat::StringUtfBom | FieldFormat::StringXml | FieldFormat::StringJson => {
-                    if let (Some(bom_encoding), bom_len) = PerfTextEncoding::from_bom(bytes) {
-                        bytes = &bytes[bom_len as usize..];
-                        encoding = bom_encoding;
-                    }
-                }
-
-                _ => {}
+            FieldFormat::String8 => {
+                return writer.write_quoted(|w| w.write_latin1_with_json_escape(bytes))
             }
 
-            match encoding {
-                PerfTextEncoding::Latin1 => return w.write_latin1_with_json_escape(bytes),
-                PerfTextEncoding::Utf8 => return w.write_utf8_with_json_escape(bytes),
-                PerfTextEncoding::Utf16BE => return w.write_utf16be_with_json_escape(bytes),
-                PerfTextEncoding::Utf16LE => return w.write_utf16le_with_json_escape(bytes),
-                PerfTextEncoding::Utf32BE => return w.write_utf32be_with_json_escape(bytes),
-                PerfTextEncoding::Utf32LE => return w.write_utf32le_with_json_escape(bytes),
-            };
+            FieldFormat::StringUtfBom | FieldFormat::StringXml | FieldFormat::StringJson => {
+                if let (Some(bom_encoding), bom_len) = PerfTextEncoding::from_bom(bytes) {
+                    bytes = &bytes[bom_len as usize..];
+                    encoding = bom_encoding;
+                }
+            }
+
+            _ => {}
+        }
+
+        return writer.write_quoted(|w| match encoding {
+            PerfTextEncoding::Latin1 => w.write_latin1_with_json_escape(bytes),
+            PerfTextEncoding::Utf8 => w.write_utf8_with_json_escape(bytes),
+            PerfTextEncoding::Utf16BE => w.write_utf16be_with_json_escape(bytes),
+            PerfTextEncoding::Utf16LE => w.write_utf16le_with_json_escape(bytes),
+            PerfTextEncoding::Utf32BE => w.write_utf32be_with_json_escape(bytes),
+            PerfTextEncoding::Utf32LE => w.write_utf32le_with_json_escape(bytes),
         });
     }
 }

@@ -110,7 +110,7 @@ impl<'dat> fmt::Display for NameDisplay<'dat> {
 
 impl<'dat> NameDisplay<'dat> {
     /// Writes the name to the specified writer.
-    pub fn write_to<W: fmt::Write>(&self, writer: &mut W) -> fmt::Result {
+    pub fn write_to<W: fmt::Write + ?Sized>(&self, writer: &mut W) -> fmt::Result {
         let mut dest = filters::WriteFilter::new(writer);
         return charconv::write_utf8_with_latin1_fallback_to(self.name, &mut dest);
     }
@@ -134,7 +134,7 @@ impl<'dat> fmt::Display for NameAndTagDisplay<'dat> {
 impl<'dat> NameAndTagDisplay<'dat> {
     /// If the field tag is 0, writes just the field name.
     /// Otherwise, writes the field name plus a suffix like ";tag=0x1234".
-    pub fn write_to<W: fmt::Write>(&self, writer: &mut W) -> fmt::Result {
+    pub fn write_to<W: fmt::Write + ?Sized>(&self, writer: &mut W) -> fmt::Result {
         let mut dest = filters::WriteFilter::new(writer);
         charconv::write_utf8_with_latin1_fallback_to(self.name, &mut dest)?;
         if self.tag != 0 {
@@ -159,7 +159,7 @@ impl<'nam, 'dat> fmt::Display for IdentityDisplay<'nam, 'dat> {
 
 impl<'nam, 'dat> IdentityDisplay<'nam, 'dat> {
     /// Writes the event identity, i.e. "ProviderName:EventName"
-    pub fn write_to<W: fmt::Write>(&self, writer: &mut W) -> fmt::Result {
+    pub fn write_to<W: fmt::Write + ?Sized>(&self, writer: &mut W) -> fmt::Result {
         let mut dest = filters::WriteFilter::new(writer);
         dest.write_str(self.provider_name)?;
         dest.write_ascii(b':')?;
@@ -209,7 +209,7 @@ impl<'inf> JsonInfoDisplay<'inf> {
     /// Writes event metadata as a comma-separated list of 0 or more
     /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
     /// Retruns true if any items were written, false if nothing was written.
-    pub fn write_to<W: fmt::Write>(&self, w: &mut W) -> Result<bool, fmt::Error> {
+    pub fn write_to<W: fmt::Write + ?Sized>(&self, w: &mut W) -> Result<bool, fmt::Error> {
         let mut json =
             writers::JsonWriter::new(w, self.convert_options, self.add_comma_before_first_item);
         let mut any_written = false;
@@ -334,9 +334,7 @@ impl<'inf> JsonInfoDisplay<'inf> {
         if self.info_options.has(PerfInfoOptions::Flags) {
             any_written = true;
             json.write_property_name_json_safe("flags")?;
-            json.write_value(|w| {
-                w.write_json_hex32(self.event_info.header.flags.as_int() as u32)
-            })?;
+            json.write_value(|w| w.write_json_hex32(self.event_info.header.flags.as_int() as u32))?;
         }
 
         return Ok(any_written);
@@ -369,16 +367,15 @@ pub enum EventHeaderEnumeratorError {
 
 impl fmt::Display for EventHeaderEnumeratorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let text;
-        match self {
-            EventHeaderEnumeratorError::Success => text = "Success",
-            EventHeaderEnumeratorError::InvalidParameter => text = "InvalidParameter",
-            EventHeaderEnumeratorError::NotSupported => text = "NotSupported",
-            EventHeaderEnumeratorError::ImplementationLimit => text = "ImplementationLimit",
-            EventHeaderEnumeratorError::InvalidData => text = "InvalidData",
-            EventHeaderEnumeratorError::StackOverflow => text = "StackOverflow",
+        let text = match self {
+            EventHeaderEnumeratorError::Success => "Success",
+            EventHeaderEnumeratorError::InvalidParameter => "InvalidParameter",
+            EventHeaderEnumeratorError::NotSupported => "NotSupported",
+            EventHeaderEnumeratorError::ImplementationLimit => "ImplementationLimit",
+            EventHeaderEnumeratorError::InvalidData => "InvalidData",
+            EventHeaderEnumeratorError::StackOverflow => "StackOverflow",
         };
-        return write!(f, "{}", text);
+        return f.pad(text);
     }
 }
 
@@ -419,18 +416,17 @@ pub enum EventHeaderEnumeratorState {
 
 impl fmt::Display for EventHeaderEnumeratorState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let text;
-        match self {
-            EventHeaderEnumeratorState::Error => text = "Error",
-            EventHeaderEnumeratorState::AfterLastItem => text = "AfterLastItem",
-            EventHeaderEnumeratorState::BeforeFirstItem => text = "BeforeFirstItem",
-            EventHeaderEnumeratorState::Value => text = "Value",
-            EventHeaderEnumeratorState::ArrayBegin => text = "ArrayBegin",
-            EventHeaderEnumeratorState::ArrayEnd => text = "ArrayEnd",
-            EventHeaderEnumeratorState::StructBegin => text = "StructBegin",
-            EventHeaderEnumeratorState::StructEnd => text = "StructEnd",
+        let text = match self {
+            EventHeaderEnumeratorState::Error => "Error",
+            EventHeaderEnumeratorState::AfterLastItem => "AfterLastItem",
+            EventHeaderEnumeratorState::BeforeFirstItem => "BeforeFirstItem",
+            EventHeaderEnumeratorState::Value => "Value",
+            EventHeaderEnumeratorState::ArrayBegin => "ArrayBegin",
+            EventHeaderEnumeratorState::ArrayEnd => "ArrayEnd",
+            EventHeaderEnumeratorState::StructBegin => "StructBegin",
+            EventHeaderEnumeratorState::StructEnd => "StructEnd",
         };
-        return write!(f, "{}", text);
+        return f.pad(text);
     }
 }
 
@@ -572,18 +568,17 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
 
     /// Returns the provider name (extracted from `tracepoint_name`).
     pub fn provider_name(&self) -> &'nam str {
-        let underscore_pos = self.tracepoint_name.rfind('_');
-        if let Some(underscore_pos) = underscore_pos {
-            return &self.tracepoint_name[..underscore_pos];
+        let result = if let Some(underscore_pos) = self.tracepoint_name.rfind('_') {
+            &self.tracepoint_name[..underscore_pos]
         } else {
-            return self.tracepoint_name;
-        }
+            self.tracepoint_name
+        };
+        return result;
     }
 
     /// Returns the provider options (extracted from `tracepoint_name`), e.g. "" or "Gmygroup".
     pub fn options(&self) -> &'nam str {
-        let underscore_pos = self.tracepoint_name.rfind('_');
-        if let Some(underscore_pos) = underscore_pos {
+        if let Some(underscore_pos) = self.tracepoint_name.rfind('_') {
             // Skip "L...K..." by looking for the next uppercase letter other than L or K.
             let bytes = self.tracepoint_name.as_bytes();
             let mut pos = underscore_pos + 1;
@@ -599,6 +594,7 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
                 pos += 1;
             }
         }
+
         return "";
     }
 
@@ -614,22 +610,25 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
 
     /// Returns the activity ID, or None if there is no activity ID.
     pub fn activity_id(&self) -> Option<&'dat [u8; 16]> {
-        if self.activity_id_len < 16 {
-            return None;
+        let result = if self.activity_id_len < 16 {
+            None
         } else {
             let start = self.activity_id_start as usize;
-            return Some(self.event_data[start..start + 16].try_into().unwrap());
-        }
+            Some(self.event_data[start..start + 16].try_into().unwrap())
+        };
+
+        return result;
     }
 
     /// Returns the related activity ID, or None if there is no related activity ID.
     pub fn related_activity_id(&self) -> Option<&'dat [u8; 16]> {
-        if self.activity_id_len < 32 {
-            return None;
+        let result = if self.activity_id_len < 32 {
+            None
         } else {
             let start = self.activity_id_start as usize + 16;
-            return Some(self.event_data[start..start + 16].try_into().unwrap());
-        }
+            Some(self.event_data[start..start + 16].try_into().unwrap())
+        };
+        return result;
     }
 }
 
@@ -645,6 +644,20 @@ pub struct EventHeaderItemInfo<'dat> {
 }
 
 impl<'dat> EventHeaderItemInfo<'dat> {
+    fn new(context: &EventHeaderEnumeratorContext, event_data: &'dat [u8]) -> Self {
+        debug_assert!(context.state.can_item_info());
+        let data_pos = context.data_pos_cooked as usize;
+        return Self {
+            event_data,
+            name_start: context.stack_top.name_offset,
+            name_len: context.stack_top.name_len as u32,
+            value: PerfItemValue::new(
+                &event_data[data_pos..data_pos + context.item_size_cooked as usize],
+                context.item_metadata_impl(),
+            ),
+        };
+    }
+
     /// Returns the `event_data` that was passed to
     /// `context.enumerate(tracepoint_name, event_data)`.
     pub fn event_data(&self) -> &'dat [u8] {
@@ -735,6 +748,18 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
         return self.context.last_error;
     }
 
+    /// Gets the remaining event payload, i.e. the event data that has not yet
+    /// been decoded. The data position can change each time `move_next()` is called.
+    ///
+    /// This can be useful after enumeration has completed to to determine
+    /// whether the event contains any trailing data (data not described by the
+    /// decoding information). Up to 7 bytes of trailing data is normal (padding
+    /// between events), but 8 or more bytes of trailing data might indicate some
+    /// kind of encoding problem or data corruption.
+    pub fn raw_data_position(&self) -> &'dat [u8] {
+        return &self.event_data[self.context.data_pos_raw as usize..];
+    }
+
     /// Gets information that applies to the current event, e.g. the event name,
     /// provider name, options, level, keyword, etc.
     pub fn event_info(&self) -> EventHeaderEventInfo<'nam, 'dat> {
@@ -777,47 +802,21 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     /// **PRECONDITION (debug_assert):** Can be called when `self.state().can_item_info()`,
     /// i.e. after `move_next()` returns true.
     pub fn item_metadata(&self) -> PerfItemMetadata {
-        debug_assert!(self.context.state.can_item_info());
-        let is_scalar = self.context.state < EventHeaderEnumeratorState::ArrayBegin
-            || self.context.state > EventHeaderEnumeratorState::ArrayEnd;
-        return PerfItemMetadata::new(
-            self.context.byte_reader,
-            self.context.field_type.encoding,
-            self.context.field_type.format,
-            is_scalar,
-            self.context.element_size,
-            if is_scalar {
-                1
-            } else {
-                self.context.stack_top.array_count
-            },
-            self.context.field_type.tag,
-        );
-    }
-
-    /// Gets the remaining event payload, i.e. the event data that has not yet
-    /// been decoded. The data position can change each time `move_next()` is called.
-    ///
-    /// This can be useful after enumeration has completed to to determine
-    /// whether the event contains any trailing data (data not described by the
-    /// decoding information). Up to 7 bytes of trailing data is normal (padding
-    /// between events), but 8 or more bytes of trailing data might indicate some
-    /// kind of encoding problem or data corruption.
-    pub fn raw_data_position(&self) -> &'dat [u8] {
-        return &self.event_data[self.context.data_pos_raw as usize..];
+        return self.context.item_metadata_impl();
     }
 
     /// Positions the enumerator before the first item.
     /// Resets the `move_next` limit to `MOVE_NEXT_LIMIT_DEFAULT`.
     pub fn reset(&mut self) {
-        self.context
+        return self
+            .context
             .reset_impl(EventHeaderEnumeratorContext::MOVE_NEXT_LIMIT_DEFAULT);
     }
 
     /// Positions the enumerator before the first item.
     /// Resets the `move_next` limit to the specified value.
     pub fn reset_with_limit(&mut self, move_next_limit: u32) {
-        self.context.reset_impl(move_next_limit);
+        return self.context.reset_impl(move_next_limit);
     }
 
     /// Moves the enumerator to the next item in the current event, or to the end
@@ -882,6 +881,68 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     /// Typically called in a loop until it returns false.
     pub fn move_next_metadata(&mut self) -> bool {
         return self.context.move_next_metadata_impl(self.event_data);
+    }
+
+    /// Writes a JSON representation of the current item to the provided `writer`,
+    /// e.g. for  state [`EventHeaderEnumeratorState::Value`] this might generate
+    /// `"MyField": "My Value"` (including the quotation marks), or for state
+    /// [`EventHeaderEnumeratorState::ArrayBegin`] this might generate
+    /// `"MyField": [ 1, 2, 3 ]`. Consumes the current item and its descendents as if
+    /// by a call to `move_next_sibling`.
+    ///
+    /// Returns true if a comma would be needed before subsequent JSON output, i.e. if
+    /// anything was written OR if `add_comma_before_first_item` was true.
+    ///
+    /// **PRECONDITION (debug_assert):** Can be called when `self.state().can_move_next()`.
+    ///
+    /// After calling this method, check `self.state()` to determine whether the
+    /// enumeration has reached the end of the event or has encountered an error, i.e.
+    /// enumeration should stop if `!self.state().can_move_next()`.
+    ///
+    /// The output and the amount consumed depends on the initial state of the enumerator.
+    ///
+    /// - [`EventHeaderEnumeratorState::Value`]
+    ///
+    ///   Appends the current item as a JSON name-value pair like `"MyField": 123` (omits the
+    ///   `"MyField":` name if `convert_options` omits [`PerfConvertOptions::RootName`] or if the
+    ///   item is an element of an array). Moves enumeration to the next item.
+    ///
+    /// - [`EventHeaderEnumeratorState::StructBegin`]
+    ///
+    ///   Appends the current item as a JSON  name-object pair like
+    ///   `"MyStruct": { "StructField1": 123, "StructField2": "Hello" }` (omits the `"MyStruct":`
+    ///   name if `convert_options` omits [`PerfConvertOptions::RootName`] or if the item is an
+    ///   element of an array). Moves enumeration past the end of the item and its descendents,
+    ///   i.e. after the matching [`EventHeaderEnumeratorState::StructEnd`].
+    ///
+    /// - [`EventHeaderEnumeratorState::ArrayBegin`]
+    ///
+    ///   Appends the current item as a JSON name-array pair like `"MyArray": [ 1, 2, 3 ]` (omits
+    ///   the `"MyArray":` name if `convert_options` omits [`PerfConvertOptions::RootName`]). Moves
+    ///   enumeration past the end of the item and its descendents, i.e. after the matching
+    ///   [`EventHeaderEnumeratorState::ArrayEnd`].
+    ///
+    /// - [`EventHeaderEnumeratorState::BeforeFirstItem`]
+    ///
+    ///   Appends all items in the current event as a comma-separated list of name-value pairs, e.g.
+    ///   `"MyField": 123, "MyArray": [ 1, 2, 3 ]`. Moves enumeration to
+    ///   [`EventHeaderEnumeratorState::AfterLastItem`].
+    ///
+    /// - [`EventHeaderEnumeratorState::ArrayEnd`], [`EventHeaderEnumeratorState::StructEnd`]
+    ///
+    ///   Unspecified behavior.
+    pub fn write_item_and_move_next_sibling<W: fmt::Write + ?Sized>(
+        &mut self,
+        writer: &mut W,
+        add_comma_before_first_item: bool,
+        convert_options: PerfConvertOptions,
+    ) -> Result<bool, fmt::Error> {
+        return self.context.write_item_and_move_next_sibling_impl(
+            self.event_data,
+            writer,
+            add_comma_before_first_item,
+            convert_options,
+        );
     }
 }
 
@@ -1179,11 +1240,31 @@ impl EventHeaderEnumeratorContext {
         self.event_name_len = (name_pos - self.meta_start as usize) as u16;
         self.data_start = event_pos as u32;
         self.reset_impl(move_next_limit);
+
         return Ok(EventHeaderEnumerator {
             context: self,
             event_data,
             tracepoint_name,
         });
+    }
+
+    fn item_metadata_impl(&self) -> PerfItemMetadata {
+        debug_assert!(self.state.can_item_info());
+        let is_scalar = self.state < EventHeaderEnumeratorState::ArrayBegin
+            || self.state > EventHeaderEnumeratorState::ArrayEnd;
+        return PerfItemMetadata::new(
+            self.byte_reader,
+            self.field_type.encoding,
+            self.field_type.format,
+            is_scalar,
+            self.element_size,
+            if is_scalar {
+                1
+            } else {
+                self.stack_top.array_count
+            },
+            self.field_type.tag,
+        );
     }
 
     fn reset_impl(&mut self, move_next_limit: u32) {
@@ -1487,6 +1568,95 @@ impl EventHeaderEnumeratorContext {
         return moved_to_item;
     }
 
+    fn write_item_and_move_next_sibling_impl<W: fmt::Write + ?Sized>(
+        &mut self,
+        event_data: &[u8],
+        writer: &mut W,
+        add_comma_before_first_item: bool,
+        convert_options: PerfConvertOptions,
+    ) -> Result<bool, fmt::Error> {
+        debug_assert!(self.state.can_move_next());
+
+        let mut want_name = convert_options.has(PerfConvertOptions::RootName);
+        let mut json =
+            writers::JsonWriter::new(writer, convert_options, add_comma_before_first_item);
+        let mut depth = 0i32;
+
+        loop {
+            match self.state {
+                EventHeaderEnumeratorState::BeforeFirstItem => {
+                    depth += 1;
+                }
+
+                EventHeaderEnumeratorState::Value => {
+                    let item_info = EventHeaderItemInfo::new(self, event_data);
+                    if want_name && !item_info.value.metadata().is_element() {
+                        json.write_property_name_from_item_info(&item_info)?;
+                    }
+
+                    json.write_value(|w| item_info.value.write_json_scalar_to_impl(w))?;
+                }
+
+                EventHeaderEnumeratorState::ArrayBegin => {
+                    let item_info = EventHeaderItemInfo::new(self, event_data);
+                    if want_name {
+                        json.write_property_name_from_item_info(&item_info)?;
+                    }
+
+                    if item_info.value.metadata().type_size() != 0 {
+                        item_info.value.write_json_simple_array_to_impl(&mut json)?;
+
+                        // Use move_next_sibling instead of move_next.
+                        let moved_to_item = self.move_next_sibling_impl(event_data);
+                        if !moved_to_item || depth <= 0 {
+                            break;
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    json.write_array_begin()?;
+                    depth += 1;
+                }
+
+                EventHeaderEnumeratorState::ArrayEnd => {
+                    json.write_array_end()?;
+                    depth -= 1;
+                }
+
+                EventHeaderEnumeratorState::StructBegin => {
+                    let item_info = EventHeaderItemInfo::new(self, event_data);
+
+                    if want_name && !item_info.value().metadata().is_element() {
+                        json.write_property_name_from_item_info(&item_info)?;
+                    }
+
+                    json.write_object_begin()?;
+                    depth += 1;
+                }
+
+                EventHeaderEnumeratorState::StructEnd => {
+                    json.write_object_end()?;
+                    depth -= 1;
+                }
+
+                _ => {
+                    debug_assert!(false, "Enumerator in invalid state.");
+                    return Err(fmt::Error);
+                }
+            }
+
+            want_name = true;
+
+            let moved_to_item = self.move_next_impl(event_data);
+            if !moved_to_item || depth <= 0 {
+                break;
+            }
+        }
+
+        return Ok(json.comma());
+    }
+
     fn skip_struct_metadata(&mut self, event_data: &[u8]) -> bool {
         debug_assert!(self.field_type.encoding.without_flags() == FieldEncoding::Struct);
 
@@ -1648,6 +1818,7 @@ impl EventHeaderEnumeratorContext {
             EventHeaderEnumeratorState::AfterLastItem,
             SubState::AfterLastItem,
         );
+
         return false; // No more items.
     }
 
@@ -1660,17 +1831,19 @@ impl EventHeaderEnumeratorContext {
             name_end += 1;
         }
 
-        if self.meta_end - name_end < 2 {
+        let result = if self.meta_end - name_end < 2 {
             // Missing nul termination or missing encoding.
-            return FieldType {
+            FieldType {
                 encoding: Self::READ_FIELD_ERROR,
                 format: FieldFormat::Default,
                 tag: 0,
-            };
+            }
         } else {
             self.stack_top.name_len = (name_end - name_begin) as u16;
-            return self.read_field_type(event_data, name_end + 1);
-        }
+            self.read_field_type(event_data, name_end + 1)
+        };
+
+        return result;
     }
 
     fn read_field_type(&mut self, event_data: &[u8], type_offset: u32) -> FieldType {
@@ -1701,6 +1874,7 @@ impl EventHeaderEnumeratorContext {
         }
 
         self.stack_top.next_offset = pos;
+
         return FieldType {
             encoding: encoding.without_chain_flag(),
             format: format.without_flags(),
@@ -1838,20 +2012,21 @@ impl EventHeaderEnumeratorContext {
     }
 
     fn start_value_fixed_length(&mut self, event_data: &[u8], size: u8) -> bool {
+        self.element_size = size;
+
+        let size32 = size as u32;
         let remaining_len = event_data.len() as u32 - self.data_pos_raw;
 
-        self.element_size = size;
-        self.item_size_cooked = size as u32;
-        self.item_size_raw = size as u32;
-
-        if size as u32 <= remaining_len {
-            return true;
-        } else {
+        if size32 > remaining_len {
             self.item_size_cooked = 0;
             self.item_size_raw = 0;
             self.set_error_state(EventHeaderEnumeratorError::InvalidData);
             return false;
         }
+
+        self.item_size_cooked = size32;
+        self.item_size_raw = size32;
+        return true;
     }
 
     fn start_value_zstring8(&mut self, event_data: &[u8]) {
