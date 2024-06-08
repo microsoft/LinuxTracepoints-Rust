@@ -2,9 +2,9 @@
 resolver = "2"
 members = [
     "tracepoint",
+    "tracepoint_decode",
     "eventheader",
     "eventheader_dynamic",
     "eventheader_macros",
     "eventheader_types",
-    "eventheader_decode",
 ]

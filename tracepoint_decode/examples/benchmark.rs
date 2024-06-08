@@ -1,5 +1,5 @@
 use ed::_internal as edi;
-use eventheader_decode as ed;
+use tracepoint_decode as ed;
 use std::fmt;
 use std::string;
 use std::time;

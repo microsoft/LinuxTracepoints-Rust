@@ -1,10 +1,10 @@
 [package]
-name = "eventheader_decode"
+name = "tracepoint_decode"
 version = "0.4.1"
 edition = "2021"
 authors = ["Microsoft"]
 license = "MIT"
-description = "Rust API for eventheader-encoded Linux Tracepoints via user_events"
+description = "Rust API for decoding tracepoints"
 keywords = [
     "user_events",
     "eventheader",

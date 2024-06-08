@@ -3,8 +3,8 @@ use std::fmt;
 use std::fs;
 use std::time;
 
-use eventheader_decode::_internal::JsonWriter;
-use eventheader_decode::*;
+use tracepoint_decode::_internal::JsonWriter;
+use tracepoint_decode::*;
 
 fn strnlen(bytes: &[u8]) -> usize {
     let mut len = 0;
