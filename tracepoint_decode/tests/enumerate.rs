@@ -137,7 +137,7 @@ fn enumerate_impl(
 
                 json.write_property_name_json_safe("meta")?;
                 json.write_object_begin()?;
-                json.write_value(|w| w.write_display_with_no_filter(ei.json_info_display()))?;
+                json.write_value(|w| w.write_display_with_no_filter(ei.json_meta_display()))?;
                 json.write_object_end()?;
 
                 json.write_object_end()?;

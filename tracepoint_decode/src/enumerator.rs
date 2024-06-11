@@ -14,7 +14,7 @@ use crate::filters::Filter;
 use crate::writers;
 use crate::PerfByteReader;
 use crate::PerfConvertOptions;
-use crate::PerfInfoOptions;
+use crate::PerfMetaOptions;
 use crate::PerfItemMetadata;
 use crate::PerfItemValue;
 
@@ -167,23 +167,23 @@ impl<'nam, 'dat> IdentityDisplay<'nam, 'dat> {
     }
 }
 
-/// Formatter for the "info" suffix of an EventHeader event, i.e. `"level": 5, "keyword": 3`.
+/// Formatter for the "meta" suffix of an EventHeader event, i.e. `"level": 5, "keyword": 3`.
 #[derive(Debug)]
-pub struct JsonInfoDisplay<'inf> {
+pub struct JsonMetaDisplay<'inf> {
     event_info: &'inf EventHeaderEventInfo<'inf, 'inf>,
     add_comma_before_first_item: bool,
-    info_options: PerfInfoOptions,
+    meta_options: PerfMetaOptions,
     convert_options: PerfConvertOptions,
 }
 
-impl<'inf> fmt::Display for JsonInfoDisplay<'inf> {
+impl<'inf> fmt::Display for JsonMetaDisplay<'inf> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
         self.write_to(f)?;
         return Ok(());
     }
 }
 
-impl<'inf> JsonInfoDisplay<'inf> {
+impl<'inf> JsonMetaDisplay<'inf> {
     /// Configures whether a comma will be written before the first item, e.g.
     /// `, "level": 5` (true) instead of `"level": 5` (false). The default value is false.
     ///
@@ -194,9 +194,9 @@ impl<'inf> JsonInfoDisplay<'inf> {
     }
 
     /// Configures the items that will be included in the suffix.
-    /// The default value is [`PerfInfoOptions::Default`].
-    pub fn info_options(&mut self, value: PerfInfoOptions) -> &mut Self {
-        self.info_options = value;
+    /// The default value is [`PerfMetaOptions::Default`].
+    pub fn meta_options(&mut self, value: PerfMetaOptions) -> &mut Self {
+        self.meta_options = value;
         return self;
     }
 
@@ -216,8 +216,8 @@ impl<'inf> JsonInfoDisplay<'inf> {
 
         let tracepoint_name = self.event_info.tracepoint_name;
         let provider_name_end = if self
-            .info_options
-            .has(PerfInfoOptions::Provider.or(PerfInfoOptions::Options))
+            .meta_options
+            .has(PerfMetaOptions::Provider.or(PerfMetaOptions::Options))
         {
             // Unwrap: Shouldn't be possible to get an EventHeaderEventInfo with an invalid tracepoint name.
             tracepoint_name.rfind('_').unwrap()
@@ -225,7 +225,7 @@ impl<'inf> JsonInfoDisplay<'inf> {
             0
         };
 
-        if self.info_options.has(PerfInfoOptions::Provider) {
+        if self.meta_options.has(PerfMetaOptions::Provider) {
             any_written = true;
             json.write_property_name_json_safe("provider")?;
             json.write_value_quoted(|w| {
@@ -233,7 +233,7 @@ impl<'inf> JsonInfoDisplay<'inf> {
             })?;
         }
 
-        if self.info_options.has(PerfInfoOptions::Event) {
+        if self.meta_options.has(PerfMetaOptions::Event) {
             any_written = true;
             json.write_property_name_json_safe("event")?;
             json.write_value_quoted(|w| {
@@ -241,19 +241,19 @@ impl<'inf> JsonInfoDisplay<'inf> {
             })?;
         }
 
-        if self.info_options.has(PerfInfoOptions::Id) && self.event_info.header.id != 0 {
+        if self.meta_options.has(PerfMetaOptions::Id) && self.event_info.header.id != 0 {
             any_written = true;
             json.write_property_name_json_safe("id")?;
             json.write_value(|w| w.write_display_with_no_filter(self.event_info.header.id))?;
         }
 
-        if self.info_options.has(PerfInfoOptions::Version) && self.event_info.header.version != 0 {
+        if self.meta_options.has(PerfMetaOptions::Version) && self.event_info.header.version != 0 {
             any_written = true;
             json.write_property_name_json_safe("version")?;
             json.write_value(|w| w.write_display_with_no_filter(self.event_info.header.version))?;
         }
 
-        if self.info_options.has(PerfInfoOptions::Level)
+        if self.meta_options.has(PerfMetaOptions::Level)
             && self.event_info.header.level != Level::Invalid
         {
             any_written = true;
@@ -263,13 +263,13 @@ impl<'inf> JsonInfoDisplay<'inf> {
             })?;
         }
 
-        if self.info_options.has(PerfInfoOptions::Keyword) && self.event_info.keyword != 0 {
+        if self.meta_options.has(PerfMetaOptions::Keyword) && self.event_info.keyword != 0 {
             any_written = true;
             json.write_property_name_json_safe("keyword")?;
             json.write_value(|w| w.write_json_hex64(self.event_info.keyword))?;
         }
 
-        if self.info_options.has(PerfInfoOptions::Opcode)
+        if self.meta_options.has(PerfMetaOptions::Opcode)
             && self.event_info.header.opcode != Opcode::Info
         {
             any_written = true;
@@ -279,13 +279,13 @@ impl<'inf> JsonInfoDisplay<'inf> {
             })?;
         }
 
-        if self.info_options.has(PerfInfoOptions::Tag) && self.event_info.header.tag != 0 {
+        if self.meta_options.has(PerfMetaOptions::Tag) && self.event_info.header.tag != 0 {
             any_written = true;
             json.write_property_name_json_safe("tag")?;
             json.write_value(|w| w.write_json_hex32(self.event_info.header.tag as u32))?;
         }
 
-        if self.info_options.has(PerfInfoOptions::Activity) && self.event_info.activity_id_len >= 16
+        if self.meta_options.has(PerfMetaOptions::Activity) && self.event_info.activity_id_len >= 16
         {
             any_written = true;
             json.write_property_name_json_safe("activity")?;
@@ -299,7 +299,7 @@ impl<'inf> JsonInfoDisplay<'inf> {
             })?;
         }
 
-        if self.info_options.has(PerfInfoOptions::RelatedActivity)
+        if self.meta_options.has(PerfMetaOptions::RelatedActivity)
             && self.event_info.activity_id_len >= 32
         {
             any_written = true;
@@ -314,7 +314,7 @@ impl<'inf> JsonInfoDisplay<'inf> {
             })?;
         }
 
-        if self.info_options.has(PerfInfoOptions::Options) {
+        if self.meta_options.has(PerfMetaOptions::Options) {
             let name_bytes = tracepoint_name.as_bytes();
             let mut pos = provider_name_end;
             while pos < name_bytes.len() {
@@ -331,7 +331,7 @@ impl<'inf> JsonInfoDisplay<'inf> {
             }
         }
 
-        if self.info_options.has(PerfInfoOptions::Flags) {
+        if self.meta_options.has(PerfMetaOptions::Flags) {
             any_written = true;
             json.write_property_name_json_safe("flags")?;
             json.write_value(|w| w.write_json_hex32(self.event_info.header.flags.as_int() as u32))?;
@@ -480,18 +480,18 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
         };
     }
 
-    /// Returns a formatter for the event's "info" suffix.
+    /// Returns a formatter for the event's "meta" suffix.
     ///
     /// The returned formatter writes event metadata as a comma-separated list of 0 or more
     /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
     ///
-    /// The included items default to [`PerfInfoOptions::Default`], but can be customized with
-    /// the `info_options()` property.
+    /// The included items default to [`PerfMetaOptions::Default`], but can be customized with
+    /// the `meta_options()` property.
     ///
     /// One name-value pair is appended for each metadata item that is both requested
-    /// by `info_options` and has a meaningful value available in the event. For example,
+    /// by `meta_options` and has a meaningful value available in the event. For example,
     /// the "id" metadata item is only appended if the event has a non-zero `Id` value,
-    /// even if the `info_options` property includes [`PerfInfoOptions::Id`].
+    /// even if the `meta_options` property includes [`PerfMetaOptions::Id`].
     ///
     /// The following metadata items are supported:
     ///
@@ -507,11 +507,11 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
     /// - `"relatedActivity": "12345678-1234-1234-1234-1234567890AB"` (omitted if not present)
     /// - `"options": "Gmygroup"` (omitted if not present, off by default)
     /// - `"flags": "0x7"` (omitted if zero, off by default)
-    pub fn json_info_display(&self) -> JsonInfoDisplay {
-        return JsonInfoDisplay {
+    pub fn json_meta_display(&self) -> JsonMetaDisplay {
+        return JsonMetaDisplay {
             event_info: self,
             add_comma_before_first_item: false,
-            info_options: PerfInfoOptions::Default,
+            meta_options: PerfMetaOptions::Default,
             convert_options: PerfConvertOptions::Default,
         };
     }

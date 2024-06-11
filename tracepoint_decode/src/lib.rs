@@ -17,7 +17,7 @@ pub use enumerator::EventHeaderItemInfo;
 pub use enumerator::NameAndTagDisplay;
 pub use enumerator::NameDisplay;
 pub use perf_item::PerfConvertOptions;
-pub use perf_item::PerfInfoOptions;
+pub use perf_item::PerfMetaOptions;
 pub use perf_item::PerfItemMetadata;
 pub use perf_item::PerfItemValue;
 pub use perf_item::PerfTextEncoding;
