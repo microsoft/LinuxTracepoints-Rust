@@ -209,17 +209,17 @@ impl From<ExtensionKind> for u16 {
 /// `IPAddress`) formats.  When used with fixed-length formats, the semantics depend
 /// on the field's variable `Length` (as determined from the first 16 bits of the
 /// field):
-/// 
+///
 /// - If the `Length` is 0, the field is formatted as `null`. For example, a field
 ///   with encoding = `BinaryLength16Char8`, format = `SignedInt`, and `Length` = 0
 ///   would be formatted as a null value.
-/// 
+///
 /// - If the `Length` is appropriate for the format, the field is formatted as if it
 ///   had the `Value8`, `Value16`, `Value32`, `Value64`, or `Value128` encoding
 ///   corresponding to its size. For example, a field with encoding =
 ///   `BinaryLength16Char8`, format = `SignedInt`, and `Length` = 4 would be
 ///   formatted as an int32 field.
-/// 
+///
 /// - If the `Length` is not appropriate for the format, the field is formatted as
 ///   if it had the default format for the encoding. For example, a field with
 ///   encoding = `BinaryLength16Char8`, format = `SignedInt`, and `Length` = 16 would
@@ -496,7 +496,7 @@ impl FieldFormat {
     /// IP address, network byte order (in_addr/in6_addr layout). Use with Value32 or Value128 encoding.
     pub const IPAddress: Self = Self(17);
 
-    /// Do not produce this format. Decode the same as event_field_format_ip_address.
+    /// Do not produce this format. Decode the same as IPAddress.
     pub const IPAddressObsolete: Self = Self(18);
 
     /// Deprecated alias for `IPAddress`.

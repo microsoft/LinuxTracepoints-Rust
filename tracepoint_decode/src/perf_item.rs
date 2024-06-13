@@ -981,9 +981,9 @@ impl<'dat> PerfItemValue<'dat> {
                     FieldFormat::String8 => {
                         writer.write_latin1_with_control_chars_filter(self.bytes)
                     }
-                    FieldFormat::StringUtf => match self.bytes.len() {
-                        _ => writer.write_utf8_with_control_chars_filter(self.bytes),
-                    },
+                    FieldFormat::StringUtf => {
+                        writer.write_utf8_with_control_chars_filter(self.bytes)
+                    }
                     FieldFormat::StringUtfBom
                     | FieldFormat::StringXml
                     | FieldFormat::StringJson => {
@@ -1258,9 +1258,9 @@ impl<'dat> PerfItemValue<'dat> {
                     FieldFormat::String8 => {
                         writer.write_quoted(|w| w.write_latin1_with_json_escape(self.bytes))
                     }
-                    FieldFormat::StringUtf => match self.bytes.len() {
-                        _ => writer.write_quoted(|w| w.write_utf8_with_json_escape(self.bytes)),
-                    },
+                    FieldFormat::StringUtf => {
+                        writer.write_quoted(|w| w.write_utf8_with_json_escape(self.bytes))
+                    }
                     FieldFormat::StringUtfBom
                     | FieldFormat::StringXml
                     | FieldFormat::StringJson => {
