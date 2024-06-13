@@ -31,7 +31,8 @@ fn enumerate_impl(
 ) -> Result<(), fmt::Error> {
     const OPTIONS: PerfConvertOptions = PerfConvertOptions::Default
         .and_not(PerfConvertOptions::BoolOutOfRangeAsString)
-        .or(PerfConvertOptions::FloatExtraPrecision);
+        //.or(PerfConvertOptions::FloatExtraPrecision)
+        ;
 
     let mut dat_path = env::current_dir().unwrap();
     dat_path.push("test_data");
@@ -154,8 +155,10 @@ fn enumerate_impl(
     buffer.push('\n');
 
     if !output_filename.is_empty() {
-        let out_path = env::current_dir().unwrap().join(output_filename);
-        fs::write(out_path, buffer.as_bytes()).unwrap();
+        let mut out_path = env::current_dir().unwrap().join("actual");
+        fs::create_dir_all(&out_path).unwrap();
+        out_path.push(output_filename);
+        fs::write(&out_path, buffer.as_bytes()).unwrap();
     }
 
     return Ok(());
@@ -167,7 +170,7 @@ fn enumerate() -> Result<(), fmt::Error> {
 
     let mut movenext_buffer = String::new();
     enumerate_impl(
-        ".enumerate_movenext.json",
+        "enumerate_movenext.json",
         &mut movenext_buffer,
         &mut tmp_str,
         Method::MoveNext,
@@ -175,7 +178,7 @@ fn enumerate() -> Result<(), fmt::Error> {
 
     let mut movenextsibling_buffer = String::new();
     enumerate_impl(
-        ".enumerate_movenextsibling.json",
+        "enumerate_movenextsibling.json",
         &mut movenextsibling_buffer,
         &mut tmp_str,
         Method::MoveNextSibling,
@@ -183,7 +186,7 @@ fn enumerate() -> Result<(), fmt::Error> {
 
     let mut writeitem_buffer = String::new();
     enumerate_impl(
-        ".enumerate_writeitem.json",
+        "enumerate_writeitem.json",
         &mut writeitem_buffer,
         &mut tmp_str,
         Method::WriteItem,

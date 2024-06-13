@@ -11,8 +11,8 @@ use crate::descriptors::*; // For docs
 
 /// Values for [`EventHeader::flags`].
 ///
-/// Indicates whether the event came uses 32-bit or 64-bit pointers, whether
-/// the event uses little-endian or big-endian byte order, and whether the
+/// Indicates whether the event came from a process with 32-bit or 64-bit pointers,
+/// whether the event uses little-endian or big-endian byte order, and whether the
 /// event contains any header extension blocks.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -185,17 +185,58 @@ impl From<ExtensionKind> for u16 {
 /// Values for the encoding byte of a field definition.
 ///
 /// The low 5 bits of the encoding byte contain the field's encoding. The encoding
-/// indicates how a decoder should determine the size of the field. It also
-/// indicates a default format behavior that should be used if the field has no
-/// format specified or if the specified format is 0, unrecognized, or unsupported.
+/// indicates the following information about the field:
+///
+/// - How the decoder should determine the size of the field. For example,
+///   `Value32` indicates a 4-byte field,
+///   `Value128` indicates a 16-byte field,
+///   `ZStringChar8` indicates that the field ends at the first
+///   char8 unit with value 0, and `BinaryLength16Char8`
+///   indicates that the first 16 bits of the field are the uint16 `Length` and that
+///   the subsequent `Length` char8 units of the field are the field data.
+///
+/// - How the field should be formatted if the field's format is
+///   `Default` (0), unrecognized, or unsupported. For example, a
+///   `Value32` encoding with `Default` or unrecognized format should be treated as if
+///   it had `UnsignedInt` format. A `StringLength16Char8` encoding with `Default` or
+///   unrecognized format should be treated as if it had `StringUtf` format. A
+///   `BinaryLength16Char8` encoding with `Default` or unrecognized format should be
+///   treated as if it had `HexBytes` format.
+///
+/// The `StringLength16Char8` and `BinaryLength16Char8` encodings are special.
+/// These encodings can be used with both variable-length (e.g. `HexBytes` and
+/// String) formats as well as with fixed-length (e.g. `UnsignedInt`, `Float`,
+/// `IPAddress`) formats.  When used with fixed-length formats, the semantics depend
+/// on the field's variable `Length` (as determined from the first 16 bits of the
+/// field):
+/// 
+/// - If the `Length` is 0, the field is formatted as `null`. For example, a field
+///   with encoding = `BinaryLength16Char8`, format = `SignedInt`, and `Length` = 0
+///   would be formatted as a null value.
+/// 
+/// - If the `Length` is appropriate for the format, the field is formatted as if it
+///   had the `Value8`, `Value16`, `Value32`, `Value64`, or `Value128` encoding
+///   corresponding to its size. For example, a field with encoding =
+///   `BinaryLength16Char8`, format = `SignedInt`, and `Length` = 4 would be
+///   formatted as an int32 field.
+/// 
+/// - If the `Length` is not appropriate for the format, the field is formatted as
+///   if it had the default format for the encoding. For example, a field with
+///   encoding = `BinaryLength16Char8`, format = `SignedInt`, and `Length` = 16 would
+///   be formatted as a `HexBytes` field since 16 is not a supported size for the
+///   `SignedInt` format and the default format for `BinaryLength16Char8` is
+///   `HexBytes`.
 ///
 /// The top 3 bits of the field encoding byte are flags:
+///
 /// - `CArrayFlag` indicates that this field is a constant-length array, with the
 ///   element count specified as a 16-bit value in the event metadata (must not be
 ///   0).
+///
 /// - `VArrayFlag` indicates that this field is a variable-length array, with the
 ///   element count specified as a 16-bit value in the event payload (immediately
 ///   before the array elements, may be 0).
+///
 /// - `ChainFlag` indicates that a format byte is present after the encoding byte.
 ///   If `ChainFlag` is not set, the format byte is omitted and is assumed to be 0.
 ///
@@ -299,10 +340,9 @@ impl FieldEncoding {
     pub const ZStringChar32: Self = Self(9);
 
     /// uint16 Length followed by uint8 Data\[Length\], default format StringUtf.
-    /// Also used for binary data (format HexBytes).
+    /// Used for string and binary data. Also used for nullable fields.
     ///
-    /// Usable formats: HexBytes, String8, StringUtf, StringUtfBom, StringXml,
-    /// StringJson.
+    /// Usable formats: any.
     pub const StringLength16Char8: Self = Self(10);
 
     /// uint16 Length followed by uint16 Data\[Length\], default format StringUtf.
@@ -314,6 +354,12 @@ impl FieldEncoding {
     ///
     /// Usable formats: HexBytes, StringUtf, StringUtfBom, StringXml, StringJson.
     pub const StringLength16Char32: Self = Self(12);
+
+    /// uint16 Length followed by uint8 Data\[Length\], default format HexBytes.
+    /// Used for string and binary data. Also used for nullable fields.
+    ///
+    /// Usable formats: any.
+    pub const BinaryLength16Char8: Self = Self(13);
 
     /// usize value, default format UnsignedInt.
     /// This is an alias for either `Value32` or `Value64`.
@@ -447,11 +493,17 @@ impl FieldFormat {
     /// IP port, network byte order (in_port_t layout). Use with Value16 encoding.
     pub const Port: Self = Self(16);
 
-    /// IPv4 address, network byte order (in_addr layout). Use with Value32 encoding.
-    pub const IPv4: Self = Self(17);
+    /// IP address, network byte order (in_addr/in6_addr layout). Use with Value32 or Value128 encoding.
+    pub const IPAddress: Self = Self(17);
 
-    /// IPv6 address, in6_addr layout. Use with Value128 encoding.
-    pub const IPv6: Self = Self(18);
+    /// Do not produce this format. Decode the same as event_field_format_ip_address.
+    pub const IPAddressObsolete: Self = Self(18);
+
+    /// Deprecated alias for `IPAddress`.
+    pub const IPv4: Self = Self::IPAddress;
+
+    /// Deprecated alias for `IPAddressObsolete`.
+    pub const IPv6: Self = Self::IPAddressObsolete;
 
     /// Mask for the type field.
     pub const ValueMask: u8 = 0x7F;

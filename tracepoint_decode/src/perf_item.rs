@@ -119,8 +119,8 @@ impl PerfConvertOptions {
     /// "Name;tag=0xNNNN": "ItemValue".
     pub const FieldTag: Self = Self(0x04);
 
-    /// If set, float will format with "{:.9}" (single-precision) or "{:.17}" (double-precision).
-    /// If unset, float will format with "{}".
+    /// If set, `f32` will format with `"{:.9}"` or `"{:.9e}"`, and `f64` will format with
+    /// `"{:.17}"` or `"{:.17e}"`. If unset, both will format with `"{:}"` or `"{:e}"`.
     pub const FloatExtraPrecision: Self = Self(0x10);
 
     /// If set, non-finite float will format as a string like "NaN" or "-Infinity".
@@ -734,6 +734,7 @@ impl<'dat> PerfItemValue<'dat> {
     }
 
     /// For [`FieldEncoding::Value32`]: gets an [`net::Ipv4Addr`] value starting at offset `index * 4`.
+    /// Requires the `rustc_1_77` feature. If not available, use `to_u8x4` for similar functionality.
     #[cfg(feature = "rustc_1_77")]
     pub fn to_ipv4(&self, index: usize) -> net::Ipv4Addr {
         const SIZE: usize = 4;
@@ -744,6 +745,7 @@ impl<'dat> PerfItemValue<'dat> {
     }
 
     /// For [`FieldEncoding::Value128`]: gets an [`net::Ipv6Addr`] value starting at offset `index * 16`.
+    /// Requires the `rustc_1_77` feature. If not available, use `to_u8x16` for similar functionality.
     #[cfg(feature = "rustc_1_77")]
     pub fn to_ipv6(&self, index: usize) -> net::Ipv6Addr {
         const SIZE: usize = 16;
@@ -794,7 +796,8 @@ impl<'dat> PerfItemValue<'dat> {
         let enc = match self.metadata.encoding() {
             FieldEncoding::Value8
             | FieldEncoding::ZStringChar8
-            | FieldEncoding::StringLength16Char8 => PerfTextEncoding::Utf8,
+            | FieldEncoding::StringLength16Char8
+            | FieldEncoding::BinaryLength16Char8 => PerfTextEncoding::Utf8,
 
             FieldEncoding::Value16
             | FieldEncoding::ZStringChar16
@@ -898,7 +901,7 @@ impl<'dat> PerfItemValue<'dat> {
             FieldEncoding::Value32 => self.write_value32_to(&mut writer, 0),
             FieldEncoding::Value64 => self.write_value64_to(&mut writer, 0),
             FieldEncoding::Value128 => self.write_value128_to(&mut writer, 0),
-            FieldEncoding::ZStringChar8 | FieldEncoding::StringLength16Char8 => {
+            FieldEncoding::ZStringChar8 => {
                 self.write_scalar_string_to(&mut writer, PerfTextEncoding::Utf8)
             }
             FieldEncoding::ZStringChar16 | FieldEncoding::StringLength16Char16 => self
@@ -919,6 +922,103 @@ impl<'dat> PerfItemValue<'dat> {
                         PerfTextEncoding::Utf32LE
                     },
                 ),
+            FieldEncoding::BinaryLength16Char8 | FieldEncoding::StringLength16Char8 => {
+                match self.metadata.format() {
+                    FieldFormat::UnsignedInt => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        1 => writer.write_display_with_no_filter(self.to_u8(0) as u32),
+                        2 => writer.write_display_with_no_filter(self.to_u16(0) as u32),
+                        4 => writer.write_display_with_no_filter(self.to_u32(0)),
+                        8 => writer.write_display_with_no_filter(self.to_u64(0)),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::SignedInt => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        1 => writer.write_display_with_no_filter(self.to_i8(0) as i32),
+                        2 => writer.write_display_with_no_filter(self.to_i16(0) as i32),
+                        4 => writer.write_display_with_no_filter(self.to_i32(0)),
+                        8 => writer.write_display_with_no_filter(self.to_i64(0)),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::HexInt => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        1 => writer.write_hex32(self.to_u8(0) as u32),
+                        2 => writer.write_hex32(self.to_u16(0) as u32),
+                        4 => writer.write_hex32(self.to_u32(0)),
+                        8 => writer.write_hex64(self.to_u64(0)),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::Errno => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        4 => writer.write_errno(self.to_u32(0)),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::Pid => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        4 => writer.write_display_with_no_filter(self.to_i32(0)),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::Time => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        4 => writer.write_time64(self.to_time32(0) as i64),
+                        8 => writer.write_time64(self.to_time64(0)),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::Boolean => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        1 => writer.write_bool(self.to_u8(0) as u32),
+                        2 => writer.write_bool(self.to_u16(0) as u32),
+                        4 => writer.write_bool(self.to_u32(0)),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::Float => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        4 => writer.write_float32(self.to_f32(0)),
+                        8 => writer.write_float64(self.to_f64(0)),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::HexBytes => writer.write_hexbytes(self.bytes),
+                    FieldFormat::String8 => {
+                        writer.write_latin1_with_control_chars_filter(self.bytes)
+                    }
+                    FieldFormat::StringUtf => match self.bytes.len() {
+                        _ => writer.write_utf8_with_control_chars_filter(self.bytes),
+                    },
+                    FieldFormat::StringUtfBom
+                    | FieldFormat::StringXml
+                    | FieldFormat::StringJson => {
+                        if let (Some(bom_encoding), bom_len) =
+                            PerfTextEncoding::from_bom(self.bytes)
+                        {
+                            writer.write_with_control_chars_filter(
+                                &self.bytes[bom_len as usize..],
+                                bom_encoding,
+                            )
+                        } else {
+                            writer.write_utf8_with_control_chars_filter(self.bytes)
+                        }
+                    }
+                    FieldFormat::Uuid => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        16 => writer.write_uuid(self.to_u8x16(0)),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::Port => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        2 => writer.write_display_with_no_filter(self.to_port(0) as u32),
+                        _ => self.write_char8_default_to(&mut writer),
+                    },
+                    FieldFormat::IPAddress | FieldFormat::IPAddressObsolete => {
+                        match self.bytes.len() {
+                            0 => writer.write_str_with_no_filter("null"),
+                            4 => writer.write_ipv4(*self.to_u8x4(0)),
+                            16 => writer.write_ipv6(self.to_u8x16(0)),
+                            _ => self.write_char8_default_to(&mut writer),
+                        }
+                    }
+                    _ => self.write_char8_default_to(&mut writer),
+                }
+            }
             _ => writer
                 .write_fmt_with_no_filter(format_args!("Encoding[{}]", self.metadata.encoding())),
         };
@@ -1078,7 +1178,7 @@ impl<'dat> PerfItemValue<'dat> {
             FieldEncoding::Value32 => self.write_json_value32_to(writer, 0),
             FieldEncoding::Value64 => self.write_json_value64_to(writer, 0),
             FieldEncoding::Value128 => self.write_json_value128_to(writer, 0),
-            FieldEncoding::ZStringChar8 | FieldEncoding::StringLength16Char8 => {
+            FieldEncoding::ZStringChar8 => {
                 self.write_json_scalar_string_to(writer, PerfTextEncoding::Utf8)
             }
             FieldEncoding::ZStringChar16 | FieldEncoding::StringLength16Char16 => self
@@ -1099,6 +1199,105 @@ impl<'dat> PerfItemValue<'dat> {
                         PerfTextEncoding::Utf32LE
                     },
                 ),
+            FieldEncoding::BinaryLength16Char8 | FieldEncoding::StringLength16Char8 => {
+                match self.metadata.format() {
+                    FieldFormat::UnsignedInt => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        1 => writer.write_display_with_no_filter(self.to_u8(0) as u32),
+                        2 => writer.write_display_with_no_filter(self.to_u16(0) as u32),
+                        4 => writer.write_display_with_no_filter(self.to_u32(0)),
+                        8 => writer.write_display_with_no_filter(self.to_u64(0)),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::SignedInt => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        1 => writer.write_display_with_no_filter(self.to_i8(0) as i32),
+                        2 => writer.write_display_with_no_filter(self.to_i16(0) as i32),
+                        4 => writer.write_display_with_no_filter(self.to_i32(0)),
+                        8 => writer.write_display_with_no_filter(self.to_i64(0)),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::HexInt => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        1 => writer.write_json_hex32(self.to_u8(0) as u32),
+                        2 => writer.write_json_hex32(self.to_u16(0) as u32),
+                        4 => writer.write_json_hex32(self.to_u32(0)),
+                        8 => writer.write_json_hex64(self.to_u64(0)),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::Errno => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        4 => writer.write_json_errno(self.to_u32(0)),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::Pid => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        4 => writer.write_display_with_no_filter(self.to_i32(0)),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::Time => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        4 => writer.write_json_time64(self.to_time32(0) as i64),
+                        8 => writer.write_json_time64(self.to_time64(0)),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::Boolean => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        1 => writer.write_json_bool(self.to_u8(0) as u32),
+                        2 => writer.write_json_bool(self.to_u16(0) as u32),
+                        4 => writer.write_json_bool(self.to_u32(0)),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::Float => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        4 => writer.write_json_float32(self.to_f32(0)),
+                        8 => writer.write_json_float64(self.to_f64(0)),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::HexBytes => writer.write_quoted(|w| w.write_hexbytes(self.bytes)),
+                    FieldFormat::String8 => {
+                        writer.write_quoted(|w| w.write_latin1_with_json_escape(self.bytes))
+                    }
+                    FieldFormat::StringUtf => match self.bytes.len() {
+                        _ => writer.write_quoted(|w| w.write_utf8_with_json_escape(self.bytes)),
+                    },
+                    FieldFormat::StringUtfBom
+                    | FieldFormat::StringXml
+                    | FieldFormat::StringJson => {
+                        if let (Some(bom_encoding), bom_len) =
+                            PerfTextEncoding::from_bom(self.bytes)
+                        {
+                            writer.write_quoted(|w| {
+                                w.write_with_json_escape(
+                                    &self.bytes[bom_len as usize..],
+                                    bom_encoding,
+                                )
+                            })
+                        } else {
+                            writer.write_quoted(|w| w.write_utf8_with_json_escape(self.bytes))
+                        }
+                    }
+                    FieldFormat::Uuid => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        16 => writer.write_quoted(|w| w.write_uuid(self.to_u8x16(0))),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::Port => match self.bytes.len() {
+                        0 => writer.write_str_with_no_filter("null"),
+                        2 => writer.write_display_with_no_filter(self.to_port(0) as u32),
+                        _ => self.write_json_char8_default_to(writer),
+                    },
+                    FieldFormat::IPAddress | FieldFormat::IPAddressObsolete => {
+                        match self.bytes.len() {
+                            0 => writer.write_str_with_no_filter("null"),
+                            4 => writer.write_quoted(|w| w.write_ipv4(*self.to_u8x4(0))),
+                            16 => writer.write_quoted(|w| w.write_ipv6(self.to_u8x16(0))),
+                            _ => self.write_json_char8_default_to(writer),
+                        }
+                    }
+                    _ => self.write_json_char8_default_to(writer),
+                }
+            }
             _ => writer.write_fmt_with_no_filter(format_args!(
                 "\"Encoding[{}]\"",
                 self.metadata.encoding()
@@ -1212,7 +1411,7 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::SignedInt => writer.write_display_with_no_filter(self.to_i8(index) as i32),
             FieldFormat::HexInt => writer.write_hex32(self.to_u8(index) as u32),
             FieldFormat::Boolean => writer.write_bool(self.to_u8(index) as u32),
@@ -1229,7 +1428,7 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::SignedInt => writer.write_display_with_no_filter(self.to_i8(index) as i32),
             FieldFormat::HexInt => writer.write_json_hex32(self.to_u8(index) as u32),
             FieldFormat::Boolean => writer.write_json_bool(self.to_u8(index) as u32),
@@ -1246,7 +1445,7 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::SignedInt => {
                 writer.write_display_with_no_filter(self.to_i16(index) as i32)
             }
@@ -1266,7 +1465,7 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::SignedInt => {
                 writer.write_display_with_no_filter(self.to_i16(index) as i32)
             }
@@ -1286,7 +1485,7 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::SignedInt | FieldFormat::Pid => {
                 writer.write_display_with_no_filter(self.to_i32(index))
             }
@@ -1309,7 +1508,7 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::SignedInt | FieldFormat::Pid => {
                 writer.write_display_with_no_filter(self.to_i32(index))
             }
@@ -1332,7 +1531,7 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::SignedInt | FieldFormat::Pid => {
                 writer.write_display_with_no_filter(self.to_i64(index))
             }
@@ -1349,7 +1548,7 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::SignedInt | FieldFormat::Pid => {
                 writer.write_display_with_no_filter(self.to_i64(index))
             }
@@ -1366,12 +1565,9 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::Uuid => writer.write_uuid(self.to_u8x16(index)),
-
-            #[cfg(feature = "rustc_1_77")]
-            FieldFormat::IPv6 => writer.write_display_with_no_filter(self.to_ipv6(index)),
-
+            FieldFormat::IPv6 => writer.write_ipv6(self.to_u8x16(index)),
             _ => writer.write_hexbytes(self.to_u8x16(index)), // Default, HexBytes
         };
     }
@@ -1381,15 +1577,21 @@ impl<'dat> PerfItemValue<'dat> {
         writer: &mut writers::ValueWriter<W>,
         index: usize,
     ) -> fmt::Result {
-        return match self.metadata.format.without_flags() {
+        return match self.metadata.format() {
             FieldFormat::Uuid => writer.write_quoted(|w| w.write_uuid(self.to_u8x16(index))),
-
-            #[cfg(feature = "rustc_1_77")]
-            FieldFormat::IPv6 => {
-                writer.write_quoted(|w| w.write_display_with_no_filter(self.to_ipv6(index)))
-            }
-
+            FieldFormat::IPv6 => writer.write_quoted(|w| w.write_ipv6(self.to_u8x16(index))),
             _ => writer.write_quoted(|w| w.write_hexbytes(self.to_u8x16(index))), // Default, HexBytes
+        };
+    }
+
+    fn write_char8_default_to<W: fmt::Write + ?Sized>(
+        &self,
+        writer: &mut writers::ValueWriter<W>,
+    ) -> fmt::Result {
+        return if self.metadata.encoding() == FieldEncoding::BinaryLength16Char8 {
+            writer.write_hexbytes(self.bytes)
+        } else {
+            writer.write_utf8_with_control_chars_filter(self.bytes)
         };
     }
 
@@ -1418,13 +1620,17 @@ impl<'dat> PerfItemValue<'dat> {
             _ => {}
         }
 
-        return match encoding {
-            PerfTextEncoding::Latin1 => writer.write_latin1_with_control_chars_filter(bytes),
-            PerfTextEncoding::Utf8 => writer.write_utf8_with_control_chars_filter(bytes),
-            PerfTextEncoding::Utf16BE => writer.write_utf16be_with_control_chars_filter(bytes),
-            PerfTextEncoding::Utf16LE => writer.write_utf16le_with_control_chars_filter(bytes),
-            PerfTextEncoding::Utf32BE => writer.write_utf32be_with_control_chars_filter(bytes),
-            PerfTextEncoding::Utf32LE => writer.write_utf32le_with_control_chars_filter(bytes),
+        return writer.write_with_control_chars_filter(bytes, encoding);
+    }
+
+    fn write_json_char8_default_to<W: fmt::Write + ?Sized>(
+        &self,
+        writer: &mut writers::ValueWriter<W>,
+    ) -> fmt::Result {
+        return if self.metadata.encoding() == FieldEncoding::BinaryLength16Char8 {
+            writer.write_quoted(|w| w.write_hexbytes(self.bytes))
+        } else {
+            writer.write_quoted(|w| w.write_utf8_with_json_escape(self.bytes))
         };
     }
 
@@ -1454,14 +1660,7 @@ impl<'dat> PerfItemValue<'dat> {
             _ => {}
         }
 
-        return writer.write_quoted(|w| match encoding {
-            PerfTextEncoding::Latin1 => w.write_latin1_with_json_escape(bytes),
-            PerfTextEncoding::Utf8 => w.write_utf8_with_json_escape(bytes),
-            PerfTextEncoding::Utf16BE => w.write_utf16be_with_json_escape(bytes),
-            PerfTextEncoding::Utf16LE => w.write_utf16le_with_json_escape(bytes),
-            PerfTextEncoding::Utf32BE => w.write_utf32be_with_json_escape(bytes),
-            PerfTextEncoding::Utf32LE => w.write_utf32le_with_json_escape(bytes),
-        });
+        return writer.write_quoted(|w| w.write_with_json_escape(bytes, encoding));
     }
 }
 

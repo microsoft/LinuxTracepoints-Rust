@@ -14,9 +14,9 @@ use crate::filters::Filter;
 use crate::writers;
 use crate::PerfByteReader;
 use crate::PerfConvertOptions;
-use crate::PerfMetaOptions;
 use crate::PerfItemMetadata;
 use crate::PerfItemValue;
+use crate::PerfMetaOptions;
 
 #[derive(Clone, Copy, Debug)]
 enum SubState {
@@ -1919,7 +1919,8 @@ impl EventHeaderEnumeratorContext {
             | FieldEncoding::ZStringChar32
             | FieldEncoding::StringLength16Char8
             | FieldEncoding::StringLength16Char16
-            | FieldEncoding::StringLength16Char32 => return true,
+            | FieldEncoding::StringLength16Char32
+            | FieldEncoding::BinaryLength16Char8 => return true,
 
             FieldEncoding::Invalid => {
                 return self.set_error_state(EventHeaderEnumeratorError::InvalidData)
@@ -1979,7 +1980,9 @@ impl EventHeaderEnumeratorContext {
             FieldEncoding::ZStringChar8 => self.start_value_zstring8(event_data),
             FieldEncoding::ZStringChar16 => self.start_value_zstring16(event_data),
             FieldEncoding::ZStringChar32 => self.start_value_zstring32(event_data),
-            FieldEncoding::StringLength16Char8 => self.start_value_string(event_data, 0),
+            FieldEncoding::StringLength16Char8 | FieldEncoding::BinaryLength16Char8 => {
+                self.start_value_string(event_data, 0)
+            }
             FieldEncoding::StringLength16Char16 => self.start_value_string(event_data, 1),
             FieldEncoding::StringLength16Char32 => self.start_value_string(event_data, 2),
 

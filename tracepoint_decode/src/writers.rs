@@ -3,6 +3,7 @@
 
 use core::fmt;
 use core::fmt::Write;
+use core::net;
 use core::str;
 
 use eventheader_types::Guid;
@@ -11,6 +12,7 @@ use crate::charconv;
 use crate::filters::*;
 use crate::EventHeaderItemInfo;
 use crate::PerfConvertOptions;
+use crate::PerfTextEncoding;
 
 #[cfg(all(windows, feature = "decode_date"))]
 mod date_time {
@@ -521,6 +523,38 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
         return Ok(result);
     }
 
+    /// Calls the `write_*_with_control_chars_filter` function corresponding to `encoding`.
+    pub fn write_with_control_chars_filter(
+        &mut self,
+        bytes: &[u8],
+        encoding: PerfTextEncoding,
+    ) -> fmt::Result {
+        match encoding {
+            PerfTextEncoding::Latin1 => self.write_latin1_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf8 => self.write_utf8_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf16BE => self.write_utf16be_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf16LE => self.write_utf16le_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf32BE => self.write_utf32be_with_control_chars_filter(bytes),
+            PerfTextEncoding::Utf32LE => self.write_utf32le_with_control_chars_filter(bytes),
+        }
+    }
+
+    /// Calls the `write_*_with_json_escape` function corresponding to `encoding`.
+    pub fn write_with_json_escape(
+        &mut self,
+        bytes: &[u8],
+        encoding: PerfTextEncoding,
+    ) -> fmt::Result {
+        match encoding {
+            PerfTextEncoding::Latin1 => self.write_latin1_with_json_escape(bytes),
+            PerfTextEncoding::Utf8 => self.write_utf8_with_json_escape(bytes),
+            PerfTextEncoding::Utf16BE => self.write_utf16be_with_json_escape(bytes),
+            PerfTextEncoding::Utf16LE => self.write_utf16le_with_json_escape(bytes),
+            PerfTextEncoding::Utf32BE => self.write_utf32be_with_json_escape(bytes),
+            PerfTextEncoding::Utf32LE => self.write_utf32le_with_json_escape(bytes),
+        }
+    }
+
     /// Writes a string with no filtering of control characters.
     pub fn write_str_with_no_filter(&mut self, value: &str) -> fmt::Result {
         return self.dest.write_str(value);
@@ -762,6 +796,25 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
         );
     }
 
+    /// Writes an IPv6 address, e.g. `ffff::1234`.
+    pub fn write_ipv6(&mut self, value: &[u8; 16]) -> fmt::Result {
+        #[cfg(feature = "rustc_1_77")]
+        return write!(self.dest, "{}", net::Ipv6Addr::from(*value));
+        #[cfg(not(feature = "rustc_1_77"))]
+        return write!(
+            self.dest,
+            "{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
+            u16::from_be_bytes(value[0..2].try_into().unwrap()),
+            u16::from_be_bytes(value[2..4].try_into().unwrap()),
+            u16::from_be_bytes(value[4..6].try_into().unwrap()),
+            u16::from_be_bytes(value[6..8].try_into().unwrap()),
+            u16::from_be_bytes(value[8..10].try_into().unwrap()),
+            u16::from_be_bytes(value[10..12].try_into().unwrap()),
+            u16::from_be_bytes(value[12..14].try_into().unwrap()),
+            u16::from_be_bytes(value[14..16].try_into().unwrap()),
+        );
+    }
+
     /// Writes hex string or decimal, respecting [`PerfConvertOptions::IntHexAsString`],
     /// e.g. `"0xFF"` or `255`.
     pub fn write_json_hex32(&mut self, value: u32) -> fmt::Result {
@@ -908,11 +961,38 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
 
     /// Writes an `f32`, respecting [`PerfConvertOptions::FloatExtraPrecision`] flag.
     pub fn write_float32(&mut self, value: f32) -> fmt::Result {
-        return if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
-            write!(self.dest, "{:.9}", value)
+        let value_pos = if value >= 0.0 { value } else { -value };
+        let e = value_pos >= 1.0e+9 || (value_pos != 0.0 && value_pos < 1.0e-4);
+        let result = if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
+            if e {
+                write!(self.dest, "{:.9e}", value)
+            } else {
+                write!(self.dest, "{:.9}", value)
+            }
+        } else if e {
+            write!(self.dest, "{:e}", value)
         } else {
-            write!(self.dest, "{}", value)
+            write!(self.dest, "{:}", value)
         };
+        return result;
+    }
+
+    /// Writes an `f64`, respecting [`PerfConvertOptions::FloatExtraPrecision`] flag.
+    pub fn write_float64(&mut self, value: f64) -> fmt::Result {
+        let value_pos = if value >= 0.0 { value } else { -value };
+        let e = value_pos >= 1.0e+17 || (value_pos != 0.0 && value_pos < 1.0e-4);
+        let result = if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
+            if e {
+                write!(self.dest, "{:.17e}", value)
+            } else {
+                write!(self.dest, "{:.17}", value)
+            }
+        } else if e {
+            write!(self.dest, "{:e}", value)
+        } else {
+            write!(self.dest, "{:}", value)
+        };
+        return result;
     }
 
     /// Writes an `f32`, respecting [`PerfConvertOptions::FloatExtraPrecision`] and
@@ -924,16 +1004,6 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
             write!(self.dest, "\"{}\"", value)
         } else {
             self.dest.write_str("null")
-        };
-        return result;
-    }
-
-    /// Writes an `f64`, respecting [`PerfConvertOptions::FloatExtraPrecision`] flag.
-    pub fn write_float64(&mut self, value: f64) -> fmt::Result {
-        let result = if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
-            write!(self.dest, "{:.17}", value)
-        } else {
-            write!(self.dest, "{}", value)
         };
         return result;
     }
