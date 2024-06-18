@@ -3,6 +3,7 @@
 
 use core::fmt;
 use core::fmt::Write;
+#[cfg(feature = "rustc_1_77")]
 use core::net;
 use core::str;
 
@@ -14,7 +15,7 @@ use crate::EventHeaderItemInfo;
 use crate::PerfConvertOptions;
 use crate::PerfTextEncoding;
 
-#[cfg(all(windows, feature = "decode_date"))]
+#[cfg(windows)]
 mod date_time {
     #[repr(C)]
     pub struct DateTime {
@@ -85,7 +86,7 @@ mod date_time {
     }
 }
 
-#[cfg(all(unix, feature = "decode_date"))]
+#[cfg(unix)]
 mod date_time {
     pub struct DateTime {
         tm: libc::tm,
@@ -134,10 +135,7 @@ mod date_time {
     }
 }
 
-#[cfg(not(any(
-    all(windows, feature = "decode_date"),
-    all(unix, feature = "decode_date")
-)))]
+#[cfg(not(any(windows, unix)))]
 mod date_time {
     pub struct DateTime {}
 

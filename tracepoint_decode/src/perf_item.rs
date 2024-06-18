@@ -628,12 +628,14 @@ impl<'dat> PerfItemValue<'dat> {
 
     /// For [`FieldEncoding::Value8`]: gets a 1-byte array starting at offset `index * 1`.
     pub fn to_u8x1(&self, index: usize) -> &'dat [u8; 1] {
+        debug_assert!(self.bytes.len() > index, "index out of range");
         return array::from_ref(&self.bytes[index]);
     }
 
     /// For [`FieldEncoding::Value16`]: gets a 2-byte array starting at offset `index * 2`.
     pub fn to_u8x2(&self, index: usize) -> &'dat [u8; 2] {
         const SIZE: usize = 2;
+        debug_assert!(self.bytes.len() / SIZE > index, "index out of range");
         return self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
             .unwrap();
@@ -642,6 +644,7 @@ impl<'dat> PerfItemValue<'dat> {
     /// For [`FieldEncoding::Value32`]: gets a 4-byte array starting at offset `index * 4`.
     pub fn to_u8x4(&self, index: usize) -> &'dat [u8; 4] {
         const SIZE: usize = 4;
+        debug_assert!(self.bytes.len() / SIZE > index, "index out of range");
         return self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
             .unwrap();
@@ -650,6 +653,7 @@ impl<'dat> PerfItemValue<'dat> {
     /// For [`FieldEncoding::Value64`]: gets a 8-byte array starting at offset `index * 8`.
     pub fn to_u8x8(&self, index: usize) -> &'dat [u8; 8] {
         const SIZE: usize = 8;
+        debug_assert!(self.bytes.len() / SIZE > index, "index out of range");
         return self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
             .unwrap();
@@ -658,6 +662,7 @@ impl<'dat> PerfItemValue<'dat> {
     /// For [`FieldEncoding::Value128`]: gets a 16-byte array starting at offset `index * 16`.
     pub fn to_u8x16(&self, index: usize) -> &'dat [u8; 16] {
         const SIZE: usize = 16;
+        debug_assert!(self.bytes.len() / SIZE > index, "index out of range");
         return self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
             .unwrap();
@@ -665,57 +670,68 @@ impl<'dat> PerfItemValue<'dat> {
 
     /// For [`FieldEncoding::Value8`]: gets a `u8` value starting at offset `index * 1`.
     pub fn to_u8(&self, index: usize) -> u8 {
+        debug_assert!(self.bytes.len() > index, "index out of range");
         return self.bytes[index];
     }
 
     /// For [`FieldEncoding::Value8`]: gets an `i8` value starting at offset `index * 1`.
     pub fn to_i8(&self, index: usize) -> i8 {
+        debug_assert!(self.bytes.len() > index, "index out of range");
         return self.bytes[index] as i8;
     }
 
     /// For [`FieldEncoding::Value16`]: gets a `u16` value starting at offset `index * 2`.
     pub fn to_u16(&self, index: usize) -> u16 {
+        debug_assert!(self.bytes.len() / 2 > index, "index out of range");
         return self.metadata.byte_reader.read_u16(&self.bytes[index * 2..]);
     }
 
     /// For [`FieldEncoding::Value16`]: gets an `i16` value starting at offset `index * 2`.
     pub fn to_i16(&self, index: usize) -> i16 {
+        debug_assert!(self.bytes.len() / 2 > index, "index out of range");
         return self.metadata.byte_reader.read_i16(&self.bytes[index * 2..]);
     }
 
     /// For [`FieldEncoding::Value32`]: gets a `u32` value starting at offset `index * 4`.
     pub fn to_u32(&self, index: usize) -> u32 {
+        debug_assert!(self.bytes.len() / 4 > index, "index out of range");
         return self.metadata.byte_reader.read_u32(&self.bytes[index * 4..]);
     }
 
     /// For [`FieldEncoding::Value32`]: gets an `i32` value starting at offset `index * 4`.
     pub fn to_i32(&self, index: usize) -> i32 {
+        debug_assert!(self.bytes.len() / 4 > index, "index out of range");
         return self.metadata.byte_reader.read_i32(&self.bytes[index * 4..]);
     }
 
     /// For [`FieldEncoding::Value64`]: gets a `u64` value starting at offset `index * 8`.
     pub fn to_u64(&self, index: usize) -> u64 {
+        debug_assert!(self.bytes.len() / 8 > index, "index out of range");
         return self.metadata.byte_reader.read_u64(&self.bytes[index * 8..]);
     }
 
     /// For [`FieldEncoding::Value64`]: gets an `i64` value starting at offset `index * 8`.
     pub fn to_i64(&self, index: usize) -> i64 {
+        debug_assert!(self.bytes.len() / 8 > index, "index out of range");
         return self.metadata.byte_reader.read_i64(&self.bytes[index * 8..]);
     }
 
     /// For [`FieldEncoding::Value32`]: gets an `f32` value starting at offset `index * 4`.
     pub fn to_f32(&self, index: usize) -> f32 {
+        debug_assert!(self.bytes.len() / 4 > index, "index out of range");
         return self.metadata.byte_reader.read_f32(&self.bytes[index * 4..]);
     }
 
     /// For [`FieldEncoding::Value64`]: gets an `f64` value starting at offset `index * 8`.
     pub fn to_f64(&self, index: usize) -> f64 {
+        debug_assert!(self.bytes.len() / 8 > index, "index out of range");
         return self.metadata.byte_reader.read_f64(&self.bytes[index * 8..]);
     }
 
     /// For [`FieldEncoding::Value128`]: gets a big-endian [`Guid`] value starting at offset `index * 16`.
     pub fn to_guid(&self, index: usize) -> Guid {
         const SIZE: usize = 16;
+        debug_assert!(self.bytes.len() / SIZE > index, "index out of range");
         return Guid::from_bytes_be(
             &self.bytes[index * SIZE..index * SIZE + SIZE]
                 .try_into()
@@ -726,6 +742,7 @@ impl<'dat> PerfItemValue<'dat> {
     /// For [`FieldEncoding::Value16`]: gets a big-endian `u16` value starting at offset `index * 2`.
     pub fn to_port(&self, index: usize) -> u16 {
         const SIZE: usize = 2;
+        debug_assert!(self.bytes.len() / SIZE > index, "index out of range");
         return u16::from_be_bytes(
             self.bytes[index * SIZE..index * SIZE + SIZE]
                 .try_into()
@@ -738,6 +755,7 @@ impl<'dat> PerfItemValue<'dat> {
     #[cfg(feature = "rustc_1_77")]
     pub fn to_ipv4(&self, index: usize) -> net::Ipv4Addr {
         const SIZE: usize = 4;
+        debug_assert!(self.bytes.len() / SIZE > index, "index out of range");
         let bits: [u8; SIZE] = self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
             .unwrap();
@@ -749,6 +767,7 @@ impl<'dat> PerfItemValue<'dat> {
     #[cfg(feature = "rustc_1_77")]
     pub fn to_ipv6(&self, index: usize) -> net::Ipv6Addr {
         const SIZE: usize = 16;
+        debug_assert!(self.bytes.len() / SIZE > index, "index out of range");
         let bits: &[u8; SIZE] = self.bytes[index * SIZE..index * SIZE + SIZE]
             .try_into()
             .unwrap();
@@ -766,11 +785,13 @@ impl<'dat> PerfItemValue<'dat> {
 
     /// For [`FieldEncoding::Value32`]: gets an `i32` value starting at offset `index * 4`.
     pub fn to_time32(&self, index: usize) -> i32 {
+        debug_assert!(self.bytes.len() / 4 > index, "index out of range");
         return self.metadata.byte_reader.read_i32(&self.bytes[index * 4..]);
     }
 
     /// For [`FieldEncoding::Value64`]: gets an `i64` value starting at offset `index * 8`.
     pub fn to_time64(&self, index: usize) -> i64 {
+        debug_assert!(self.bytes.len() / 8 > index, "index out of range");
         return self.metadata.byte_reader.read_i64(&self.bytes[index * 8..]);
     }
 

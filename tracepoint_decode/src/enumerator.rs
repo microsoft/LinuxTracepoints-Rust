@@ -1521,7 +1521,7 @@ impl EventHeaderEnumeratorContext {
                 self.stack_top.array_count = 1;
                 moved_to_item = true;
                 self.set_state(EventHeaderEnumeratorState::Value, SubState::ValueMetadata);
-            } else if self.field_type.encoding.is_varray() {
+            } else if self.field_type.encoding.is_variable_length_array() {
                 // Runtime-variable array length.
                 self.stack_top.array_count = 0;
                 moved_to_item = true;
@@ -1529,7 +1529,7 @@ impl EventHeaderEnumeratorContext {
                     EventHeaderEnumeratorState::ArrayBegin,
                     SubState::ValueMetadata,
                 );
-            } else if self.field_type.encoding.is_carray() {
+            } else if self.field_type.encoding.is_constant_length_array() {
                 // Compile-time-constant array length.
 
                 if self.meta_end - self.stack_top.next_offset < 2 {
@@ -1684,9 +1684,9 @@ impl EventHeaderEnumeratorContext {
                 remaining_field_count += typ.format.as_int();
             }
 
-            if !typ.encoding.is_carray() {
+            if !typ.encoding.is_constant_length_array() {
                 // Scalar or runtime length. We're done with the field.
-            } else if !typ.encoding.is_varray() {
+            } else if !typ.encoding.is_variable_length_array() {
                 // CArrayFlag is set, VArrayFlag is unset.
                 // Compile-time-constant array length.
                 // Skip the array length in metadata.
@@ -1741,7 +1741,7 @@ impl EventHeaderEnumeratorContext {
                 return true;
             }
 
-            if self.field_type.encoding.is_varray() {
+            if self.field_type.encoding.is_variable_length_array() {
                 // Runtime-variable array length.
 
                 if event_data.len() - (self.data_pos_raw as usize) < 2 {
@@ -1756,7 +1756,7 @@ impl EventHeaderEnumeratorContext {
                 return self.start_array(event_data.len() as u32); // StartArray will set Flags.
             }
 
-            if self.field_type.encoding.is_carray() {
+            if self.field_type.encoding.is_constant_length_array() {
                 // Compile-time-constant array length.
 
                 if self.meta_end - self.stack_top.next_offset < 2 {

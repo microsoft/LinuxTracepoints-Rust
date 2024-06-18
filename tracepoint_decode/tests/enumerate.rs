@@ -42,6 +42,8 @@ fn enumerate_impl(
     buffer.push('\u{FEFF}');
     let mut json = JsonWriter::new(buffer, OPTIONS, false);
 
+    json.write_newline_before_value(0)?;
+    json.write_property_name("EventHeaderInterceptorLE64.dat")?;
     json.write_array_begin()?;
 
     let dat_vec = fs::read(dat_path).unwrap();

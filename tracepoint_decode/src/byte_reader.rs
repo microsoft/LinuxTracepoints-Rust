@@ -38,6 +38,7 @@ impl PerfByteReader {
     /// Reads an i16 from the start of the given slice, swapping byte order if byte_swap_needed() is true.
     /// PRECONDITION: source.len() >= 2
     pub fn read_i16(self, source: &[u8]) -> i16 {
+        debug_assert!(source.len() >= 2, "source.len() >= 2");
         let source_array = source[..2].try_into().unwrap();
         return if self.source_big_endian {
             i16::from_be_bytes(source_array)
@@ -49,6 +50,7 @@ impl PerfByteReader {
     /// Reads a u16 from the start of the given slice, swapping byte order if byte_swap_needed() is true.
     /// PRECONDITION: bytes.len() >= 2
     pub fn read_u16(self, source: &[u8]) -> u16 {
+        debug_assert!(source.len() >= 2, "source.len() >= 2");
         let source_array = source[..2].try_into().unwrap();
         return if self.source_big_endian {
             u16::from_be_bytes(source_array)
@@ -60,6 +62,7 @@ impl PerfByteReader {
     /// Reads an i32 from the start of the given slice, swapping byte order if byte_swap_needed() is true.
     /// PRECONDITION: source.len() >= 4
     pub fn read_i32(self, source: &[u8]) -> i32 {
+        debug_assert!(source.len() >= 4, "source.len() >= 4");
         let source_array = source[..4].try_into().unwrap();
         return if self.source_big_endian {
             i32::from_be_bytes(source_array)
@@ -71,6 +74,7 @@ impl PerfByteReader {
     /// Reads a u32 from the start of the given slice, swapping byte order if byte_swap_needed() is true.
     /// PRECONDITION: bytes.len() >= 4
     pub fn read_u32(self, source: &[u8]) -> u32 {
+        debug_assert!(source.len() >= 4, "source.len() >= 4");
         let source_array = source[..4].try_into().unwrap();
         return if self.source_big_endian {
             u32::from_be_bytes(source_array)
@@ -82,6 +86,7 @@ impl PerfByteReader {
     /// Reads an i64 from the start of the given slice, swapping byte order if byte_swap_needed() is true.
     /// PRECONDITION: source.len() >= 8
     pub fn read_i64(self, source: &[u8]) -> i64 {
+        debug_assert!(source.len() >= 8, "source.len() >= 8");
         let source_array = source[..8].try_into().unwrap();
         return if self.source_big_endian {
             i64::from_be_bytes(source_array)
@@ -93,6 +98,7 @@ impl PerfByteReader {
     /// Reads a u64 from the start of the given slice, swapping byte order if byte_swap_needed() is true.
     /// PRECONDITION: bytes.len() >= 8
     pub fn read_u64(self, source: &[u8]) -> u64 {
+        debug_assert!(source.len() >= 8, "source.len() >= 8");
         let source_array = source[..8].try_into().unwrap();
         return if self.source_big_endian {
             u64::from_be_bytes(source_array)
@@ -104,6 +110,7 @@ impl PerfByteReader {
     /// Reads a f32 from the start of the given slice, swapping byte order if byte_swap_needed() is true.
     /// PRECONDITION: bytes.len() >= 4
     pub fn read_f32(self, source: &[u8]) -> f32 {
+        debug_assert!(source.len() >= 4, "source.len() >= 4");
         let source_array = source[..4].try_into().unwrap();
         return if self.source_big_endian {
             f32::from_be_bytes(source_array)
@@ -115,6 +122,7 @@ impl PerfByteReader {
     /// Reads a f64 from the start of the given slice, swapping byte order if byte_swap_needed() is true.
     /// PRECONDITION: source.len() >= 8
     pub fn read_f64(self, source: &[u8]) -> f64 {
+        debug_assert!(source.len() >= 8, "source.len() >= 8");
         let source_array = source[..8].try_into().unwrap();
         return if self.source_big_endian {
             f64::from_be_bytes(source_array)

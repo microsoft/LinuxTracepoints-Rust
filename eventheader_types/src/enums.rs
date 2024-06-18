@@ -277,12 +277,12 @@ impl FieldEncoding {
     }
 
     /// Returns true if CArrayFlag is present (constant-length array).
-    pub const fn is_carray(self) -> bool {
+    pub const fn is_constant_length_array(self) -> bool {
         return 0 != (self.0 & Self::CArrayFlag);
     }
 
     /// Returns true if VArrayFlag is present (variable-length array).
-    pub const fn is_varray(self) -> bool {
+    pub const fn is_variable_length_array(self) -> bool {
         return 0 != (self.0 & Self::VArrayFlag);
     }
 

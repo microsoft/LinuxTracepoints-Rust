@@ -6,14 +6,6 @@ use core::str;
 
 use crate::filters;
 
-/// Returns true if `maybe_valid_ch32` is a valid Unicode scalar value.
-/// Returns false for surrogate code points (0xD800..0xE000) and values >= 0x110000.
-#[inline]
-const fn is_valid_char(maybe_valid_ch32: u32) -> bool {
-    // This is an optimized check for !0xD800..0xE000 && < 0x110000.
-    return (maybe_valid_ch32 ^ 0xD800).wrapping_sub(0x800) < 0x110000 - 0x800;
-}
-
 #[inline]
 fn char_from_validated_u32(valid_ch32: u32) -> char {
     debug_assert!(!(0xD800..=0xDFFF).contains(&valid_ch32) && valid_ch32 < 0x110000);
@@ -28,11 +20,7 @@ fn str_from_validated_utf8(valid_utf8: &[u8]) -> &str {
 
 /// If ch32 is valid, returns the char. Otherwise, returns the replacement character.
 pub fn char_from_u32(ch32: u32) -> char {
-    if is_valid_char(ch32) {
-        return char_from_validated_u32(ch32);
-    } else {
-        return char::REPLACEMENT_CHARACTER;
-    }
+    return char::from_u32(ch32).unwrap_or(char::REPLACEMENT_CHARACTER);
 }
 
 // **** write_latin1_to
@@ -240,12 +228,7 @@ fn write_utf32_to<const BIG_ENDIAN: bool, F: filters::Filter>(
         };
         pos += 4; // Consume.
 
-        let ch = if is_valid_char(ch32) {
-            char_from_validated_u32(ch32)
-        } else {
-            char::REPLACEMENT_CHARACTER
-        };
-
+        let ch = char::from_u32(ch32).unwrap_or(char::REPLACEMENT_CHARACTER);
         filter.write_non_ascii(ch)?;
     }
 
