@@ -6,6 +6,11 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
+/// # v0.4.1 (TBD)
+/// - Add support for the `BinaryLength16Char8` encoding via
+///   [`EventBuilder::add_binary`].
+pub mod v0_4_1 {}
+
 /// # v0.3.5 (2023-02-27)
 /// - Open `user_events_data` for WRONLY instead of RDWR.
 pub mod v0_3_5 {}

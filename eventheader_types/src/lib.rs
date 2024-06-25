@@ -15,7 +15,7 @@
 //!
 //! - To generate Tracepoints with EventHeader encoding, use the `eventheader` or
 //!   `eventheader_dynamic` crates.
-//! - To decode Tracepoints with EventHeader encoding, use the `eventheader_decode`
+//! - To decode Tracepoints with EventHeader encoding, use the `tracepoint_decode`
 //!   crate.
 //! - To collect Tracepoints, use the Linux [`perf`](https://www.man7.org/linux/man-pages/man1/perf-record.1.html)
 //!   tool or the

@@ -48,6 +48,10 @@ impl StringField for u8 {}
 impl StringField for u16 {}
 impl StringField for u32 {}
 
+pub trait BinaryField: ValueField + Default + Eq {}
+impl BinaryField for i8 {}
+impl BinaryField for u8 {}
+
 trait ValueFieldEncoding: ValueField {
     const VALUE_ENCODING: FieldEncoding = match mem::size_of::<Self>() {
         1 => FieldEncoding::Value8,
@@ -77,6 +81,15 @@ trait StringFieldEncoding: StringField {
 }
 
 impl<T: StringField> StringFieldEncoding for T {}
+
+trait BinaryFieldEncoding: BinaryField {
+    const BINARY_ENCODING: FieldEncoding = match mem::size_of::<Self>() {
+        1 => FieldEncoding::BinaryLength16Char8,
+        _ => panic!(),
+    };
+}
+
+impl<T: BinaryField> BinaryFieldEncoding for T {}
 
 /// `EventBuilder` is a builder for events to be written through a [Provider].
 ///
@@ -723,6 +736,87 @@ impl EventBuilder {
             .raw_add_meta_vcount(field_name, V::ZSTRING_ENCODING, format, field_tag)
             .raw_add_data_range(field_values, |this, value| {
                 this.raw_add_data_cstr(value.as_ref());
+            });
+    }
+
+    /// Adds a field containing a nullable value or a binary blob.
+    ///
+    /// - `field_name` should be a short and distinct string that describes the field.
+    ///
+    /// - `field_value` provides the data for the field as a `&[ELEMENT]`, i.e. `&[u8]`
+    ///    or `&[i8]`.
+    ///
+    /// - `format` indicates how the decoder should interpret the field data. For example,
+    ///   if the field value is a binary blob, you would likely set `format` to
+    ///   [FieldFormat::Default] (resulting in the field decoding as `HexBytes`), and if
+    ///   the field value is a nullable unsigned integer (length 0 for null or length
+    ///   1, 2, 4, or 8 for non-null), you would set `format` to [FieldFormat::UnsignedInt].
+    ///
+    /// - `field_tag` is a 16-bit integer that will be recorded in the field and can be
+    ///   used for any provider-defined purpose. Use 0 if you are not using field tags.
+    ///
+    /// Types:
+    ///
+    /// - The field will be encoded as [FieldEncoding::BinaryLength16Char8].
+    /// - If `format` is [FieldFormat::Default], the field will be formatted as
+    ///   [FieldFormat::HexBytes].
+    /// - This can be used with any format.
+    ///   - When used with a variable-length format like `HexBytes` or one of the
+    ///     `String` formats, this results in a variable-length sequence.
+    ///   - When used with a fixed-length format like `UnsignedInt`, this results in a
+    ///     nullable field. If the length of the provided `field_value` is 0, the field
+    ///     will be interpreted as `null`. If the length is 1, 2, 4, or 8, the field will
+    ///     be interpreted as an unsigned integer. If the length is anything else, the
+    ///     field will be interpreted as `HexBytes`.
+    ///
+    /// Note that [FieldFormat::Default] saves 1 byte in the trace. For binary
+    /// encodings, [FieldFormat::Default] is treated as [FieldFormat::HexBytes], so you
+    /// can save 1 byte in the trace by using [FieldFormat::Default] instead of
+    /// [FieldFormat::HexBytes].
+    pub fn add_binary<V: BinaryField>(
+        &mut self,
+        field_name: &str,
+        field_value: impl AsRef<[V]>,
+        format: FieldFormat,
+        field_tag: u16,
+    ) -> &mut Self {
+        return self
+            .raw_add_meta_scalar(field_name, V::BINARY_ENCODING, format, field_tag)
+            .raw_add_data_counted(field_value.as_ref());
+    }
+
+    /// Adds a field containing a sequence of nullable values or binary blobs.
+    ///
+    /// - `field_name` should be a short and distinct string that describes the field.
+    ///
+    /// - `field_value` provides the data for the field as an
+    ///   `IntoIterator`-of-`&[ELEMENT]`.
+    ///
+    /// - `format` indicates how the decoder should interpret the field data. For example,
+    ///   if the field value contains binary blobs, you would likely set `format` to
+    ///   [FieldFormat::Default] (resulting in the field decoding as `HexBytes`), and if
+    ///   the field value contains nullable unsigned integers (length 0 for null or length
+    ///   1, 2, 4, or 8 for non-null), you would set `format` to [FieldFormat::UnsignedInt].
+    ///
+    /// - `field_tag` is a 16-bit integer that will be recorded in the field and can be
+    ///   used for any provider-defined purpose. Use 0 if you are not using field tags.
+    ///
+    /// See [EventBuilder::add_binary] for additional details about the compatible element
+    /// types and how they are treated.
+    pub fn add_binary_sequence<I: IntoIterator, V: BinaryField>(
+        &mut self,
+        field_name: &str,
+        field_values: I,
+        format: FieldFormat,
+        field_tag: u16,
+    ) -> &mut Self
+    where
+        I::Item: AsRef<[V]>,
+    {
+        return self
+            .raw_add_meta_vcount(field_name, V::BINARY_ENCODING, format, field_tag)
+            .raw_add_data_range(field_values, |this, value| {
+                this.raw_add_data_counted(value.as_ref());
             });
     }
 

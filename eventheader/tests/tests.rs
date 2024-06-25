@@ -7,6 +7,20 @@ use eventheader as eh;
 use eventheader::_internal as ehi;
 
 #[test]
+fn time_from_systemtime() {
+    let epoch = std::time::SystemTime::UNIX_EPOCH;
+    let d100 = std::time::Duration::from_secs(100);
+    assert_eq!(
+        eh::time_from_systemtime!(epoch + d100),
+        ehi::time_from_duration_after_1970(d100)
+    );
+    assert_eq!(
+        eh::time_from_systemtime!(epoch - d100),
+        ehi::time_from_duration_before_1970(d100)
+    );
+}
+
+#[test]
 fn time_from_duration() {
     use std::time::Duration;
 
