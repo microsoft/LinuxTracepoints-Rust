@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 #![no_std]
-#![allow(clippy::needless_return)]
 #![warn(missing_docs)]
+#![allow(clippy::needless_return)]
 
 //! EventHeader decoding
 
@@ -16,6 +16,10 @@ pub use enumerator::EventHeaderEventInfo;
 pub use enumerator::EventHeaderItemInfo;
 pub use enumerator::NameAndTagDisplay;
 pub use enumerator::NameDisplay;
+pub use perf_format::PerfEventDecodingStyle;
+pub use perf_format::PerfEventFormat;
+pub use perf_format::PerfFieldArray;
+pub use perf_format::PerfFieldFormat;
 pub use perf_item::PerfConvertOptions;
 pub use perf_item::PerfItemMetadata;
 pub use perf_item::PerfItemValue;
@@ -28,5 +32,6 @@ mod byte_reader;
 mod charconv;
 mod enumerator;
 mod filters;
+mod perf_format;
 mod perf_item;
 mod writers;

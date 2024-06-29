@@ -347,6 +347,18 @@ pub struct PerfItemMetadata {
 }
 
 impl PerfItemMetadata {
+    /// Initializes a "null" instance of the PerfItemMetadata struct.
+    pub const fn null() -> Self {
+        Self {
+            element_count: 0,
+            field_tag: 0,
+            type_size: 0,
+            encoding_and_array_flag_and_is_scalar: FieldEncoding::Invalid,
+            format: FieldFormat::Default,
+            byte_reader: PerfByteReader::new(false),
+        }
+    }
+
     /// Initializes a new instance of the PerfItemMetadata struct.
     ///
     /// These are not normally created directly. You'll normally get instances of this struct from
@@ -421,9 +433,8 @@ impl PerfItemMetadata {
             element_count,
             field_tag,
             type_size,
-            encoding_and_array_flag_and_is_scalar: FieldEncoding::from_int(
-                encoding_and_array_flag.as_int() | is_scalar_flag,
-            ),
+            encoding_and_array_flag_and_is_scalar: encoding_and_array_flag
+                .with_flags(is_scalar_flag),
             format,
             byte_reader,
         };
@@ -499,6 +510,12 @@ impl PerfItemMetadata {
     /// This is the same as `self.byte_reader().source_big_endian()`.
     pub const fn source_big_endian(&self) -> bool {
         return self.byte_reader.source_big_endian();
+    }
+}
+
+impl Default for PerfItemMetadata {
+    fn default() -> Self {
+        PerfItemMetadata::null()
     }
 }
 

@@ -261,6 +261,11 @@ impl FieldEncoding {
         return Self(self.0 & Self::ValueMask);
     }
 
+    /// Returns the encoding or'ed with the specified flags (encoding | flags).
+    pub const fn with_flags(self, flags: u8) -> FieldEncoding {
+        return Self(self.0 | flags);
+    }
+
     /// Returns the encoding without the chain flags (encoding & !ChainFlag).
     pub const fn without_chain_flag(self) -> FieldEncoding {
         return Self(self.0 & !Self::ChainFlag);
