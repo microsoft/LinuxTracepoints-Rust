@@ -15,6 +15,12 @@ use crate::EventHeaderItemInfo;
 use crate::PerfConvertOptions;
 use crate::PerfTextEncoding;
 
+/// If ch32 is valid, returns the char. Otherwise, returns the replacement character.
+#[inline]
+fn char_from_u32(ch32: u32) -> char {
+    return char::from_u32(ch32).unwrap_or(char::REPLACEMENT_CHARACTER);
+}
+
 #[cfg(windows)]
 mod date_time {
     #[repr(C)]
@@ -726,7 +732,7 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     /// Otherwise, write the replacement character.
     pub fn write_char32_with_control_chars_filter(&mut self, value: u32) -> fmt::Result {
         let result = if value >= 0x20 {
-            self.dest.write_char(charconv::char_from_u32(value))
+            self.dest.write_char(char_from_u32(value))
         } else {
             match self.options.and(PerfConvertOptions::StringControlCharsMask) {
                 PerfConvertOptions::StringControlCharsReplaceWithSpace => {
@@ -745,7 +751,7 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     /// Otherwise, write the replacement character.
     pub fn write_char32_with_json_escape(&mut self, value: u32) -> fmt::Result {
         let result = if value >= ('\\' as u32) {
-            self.dest.write_char(charconv::char_from_u32(value))
+            self.dest.write_char(char_from_u32(value))
         } else {
             JsonEscapeFilter::new(&mut self.dest).write_ascii(value as u8)
         };

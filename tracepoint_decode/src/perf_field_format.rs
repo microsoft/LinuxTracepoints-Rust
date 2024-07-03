@@ -6,14 +6,13 @@ extern crate alloc;
 use core::ops;
 
 use alloc::string;
-use alloc::vec;
 
 use crate::*;
 use eventheader_types::*;
 
 /// At present, does nothing.
 macro_rules! debug_eprintln {
-    ($($arg:tt)*) => ();
+    ($($arg:tt)*) => {};
 }
 
 /// The type of the array property of [`PerfFieldFormat`].
@@ -44,21 +43,6 @@ pub enum PerfFieldArray {
     /// e.g. `__data_loc char val[]; size:4;`.
     /// Value contains `(dataLen << 16) | offset`.
     DataLoc4,
-}
-
-/// Values for the DecodingStyle property of PerfEventFormat.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum PerfEventDecodingStyle {
-    /// Decoding information not available.
-    None,
-
-    /// Event should be decoded using tracefs "format" file.
-    TraceEventFormat,
-
-    /// Event contains embedded "EventHeader" metadata and should be decoded using
-    /// [`EventHeaderEnumerator`]. (TraceEvent decoding information is present, but the
-    /// first TraceEvent-format field is named "eventheader_flags".)
-    EventHeader,
 }
 
 /// Stores decoding information about a field, parsed from a tracefs "format" file.
@@ -325,11 +309,7 @@ impl PerfFieldFormat {
                 FieldEncoding::ZStringChar8
             };
             result.deduced_array_count = 1;
-            result.element_size_shift = if result.size == 1 {
-                0u8
-            } else {
-                u8::max_value()
-            };
+            result.element_size_shift = if result.size == 1 { 0u8 } else { u8::MAX };
         } else if result.specified_format == FieldFormat::HexBytes {
             debug_assert!(result.specified_encoding == FieldEncoding::Struct);
             result.deduced_encoding = if result.size == 1 {
@@ -338,7 +318,7 @@ impl PerfFieldFormat {
                 FieldEncoding::StringLength16Char8
             };
             result.deduced_array_count = 1;
-            result.element_size_shift = u8::max_value();
+            result.element_size_shift = u8::MAX;
         } else {
             #[allow(clippy::never_loop)]
             'DeductionDone: loop {
@@ -519,7 +499,7 @@ impl PerfFieldFormat {
                         (result.deduced_encoding.as_int() & FieldEncoding::FlagMask) == 0
                     );
                     debug_assert!(result.deduced_format == FieldFormat::HexBytes);
-                    debug_assert!(result.element_size_shift == u8::max_value());
+                    debug_assert!(result.element_size_shift == u8::MAX);
                 }
                 FieldEncoding::ZStringChar8 => {
                     debug_assert!(result.deduced_array_count == 1);
@@ -527,7 +507,7 @@ impl PerfFieldFormat {
                         (result.deduced_encoding.as_int() & FieldEncoding::FlagMask) == 0
                     );
                     debug_assert!(result.deduced_format == FieldFormat::String8);
-                    debug_assert!(result.element_size_shift == u8::max_value());
+                    debug_assert!(result.element_size_shift == u8::MAX);
                 }
                 _ => {
                     panic!("Unexpected deduced_encoding type");
@@ -951,279 +931,7 @@ impl PerfFieldFormat {
         self.deduced_encoding = FieldEncoding::StringLength16Char8;
         self.deduced_format = FieldFormat::HexBytes;
         self.deduced_array_count = 1;
-        self.element_size_shift = u8::max_value();
-    }
-}
-
-/// Event information parsed from a tracefs "format" file.
-#[derive(Debug)]
-pub struct PerfEventFormat {
-    system_name: string::String,
-    name: string::String,
-    print_fmt: string::String,
-    fields: vec::Vec<PerfFieldFormat>,
-    id: u32,
-    common_field_count: u16,
-    common_fields_size: u16,
-    decoding_style: PerfEventDecodingStyle,
-}
-
-impl PerfEventFormat {
-    /// Returns an object with no format information.
-    pub const fn empty() -> Self {
-        PerfEventFormat {
-            system_name: string::String::new(),
-            name: string::String::new(),
-            print_fmt: string::String::new(),
-            fields: vec::Vec::new(),
-            id: 0,
-            common_field_count: 0,
-            common_fields_size: 0,
-            decoding_style: PerfEventDecodingStyle::None,
-        }
-    }
-
-    /// Parses an event's "format" file and sets the fields of this object based
-    /// on the results.
-    ///
-    /// - `long_is_64_bits`:
-    ///   Indicates the size to use for "long" fields in this event.
-    ///   true if sizeof(long) == 8, false if sizeof(long) == 4.
-    ///
-    /// - `system_name`:
-    ///   The name of the system. For example, the system_name for "user_events:my_event"
-    ///   would be "user_events".
-    ///
-    /// - `format_file_contents`:
-    ///   The contents of the "format" file. This is typically obtained from tracefs,
-    ///   e.g. the format_file_contents for "user_events:my_event" will usually be the
-    ///   contents of "/sys/kernel/tracing/events/user_events/my_event/format".
-    ///
-    /// If "ID:" is a valid unsigned and and "name:" is not empty, returns
-    /// a usable value. Otherwise, returns an `empty()` value.
-    pub fn parse(long_is_64_bits: bool, system_name: &str, format_file_contents: &str) -> Self {
-        let mut name = "";
-        let mut print_fmt = "";
-        let mut fields = vec::Vec::new();
-        let mut id = None;
-        let mut common_field_count = 0u16;
-
-        let format_bytes = format_file_contents.as_bytes();
-
-        // Search for lines like "NAME: VALUE..."
-        let mut pos = 0;
-        'NextLine: while pos < format_bytes.len() {
-            // Skip any newlines.
-            while is_eol_char(format_bytes[pos]) {
-                pos += 1;
-                if pos >= format_bytes.len() {
-                    break 'NextLine;
-                }
-            }
-
-            // Skip spaces.
-            while is_space_or_tab(format_bytes[pos]) {
-                debug_eprintln!("Space before propname in event");
-                pos += 1; // Unexpected.
-                if pos >= format_bytes.len() {
-                    break 'NextLine;
-                }
-            }
-
-            // "NAME:"
-            let prop_name_pos = pos;
-            while format_bytes[pos] != b':' {
-                if is_eol_char(format_bytes[pos]) {
-                    debug_eprintln!("EOL before ':' in format");
-                    continue 'NextLine; // Unexpected.
-                }
-
-                pos += 1;
-
-                if pos >= format_bytes.len() {
-                    debug_eprintln!("EOF before ':' in format");
-                    break 'NextLine; // Unexpected.
-                }
-            }
-
-            let prop_name = &format_bytes[prop_name_pos..pos];
-            pos += 1; // Skip ':'
-
-            // Skip spaces.
-            while pos < format_bytes.len() && is_space_or_tab(format_bytes[pos]) {
-                pos += 1;
-            }
-
-            let prop_value_pos = pos;
-
-            // "VALUE..."
-            while pos < format_bytes.len() && !is_eol_char(format_bytes[pos]) {
-                let consumed = format_bytes[pos];
-                pos += 1;
-
-                if consumed == b'"' {
-                    pos = consume_string(pos, format_bytes, b'"');
-                }
-            }
-
-            // Did we find something we can use?
-            if prop_name == b"name" {
-                name = &format_file_contents[prop_value_pos..pos];
-            } else if prop_name == b"ID" && pos < format_bytes.len() {
-                id = ascii_to_u32(&format_bytes[prop_value_pos..pos]);
-            } else if prop_name == b"print fmt" {
-                print_fmt = &format_file_contents[prop_value_pos..pos];
-            } else if prop_name == b"format" {
-                let mut common = true;
-                fields.clear();
-
-                // Search for lines like: " field:TYPE NAME; offset:N; size:N; signed:N;"
-                while pos < format_bytes.len() {
-                    debug_assert!(
-                        is_eol_char(format_bytes[pos]),
-                        "Loop should only repeat at EOL"
-                    );
-
-                    if format_bytes.len() - pos >= 2
-                        && format_bytes[pos] == b'\r'
-                        && format_bytes[pos + 1] == b'\n'
-                    {
-                        pos += 2; // Skip CRLF.
-                    } else {
-                        pos += 1; // Skip CR or LF.
-                    }
-
-                    let line_start_pos = pos;
-                    while pos < format_bytes.len() && !is_eol_char(format_bytes[pos]) {
-                        pos += 1;
-                    }
-
-                    if line_start_pos == pos {
-                        // Blank line.
-                        if common {
-                            // First blank line means we're done with common fields.
-                            common = false;
-                            continue;
-                        } else {
-                            // Second blank line means we're done with format.
-                            break;
-                        }
-                    }
-
-                    let field = PerfFieldFormat::parse(
-                        long_is_64_bits,
-                        &format_file_contents[line_start_pos..pos],
-                    );
-                    if let Some(field) = field {
-                        fields.push(field);
-                        if common {
-                            common_field_count += 1;
-                        }
-                    } else {
-                        debug_eprintln!("Field parse failure");
-                    }
-                }
-            }
-        }
-
-        match id {
-            Some(id) if !name.is_empty() => {
-                let common_fields_size = if common_field_count == 0 {
-                    0
-                } else {
-                    let last_common_field = &fields[common_field_count as usize - 1];
-                    last_common_field.offset + last_common_field.size
-                };
-
-                let decoding_style = if fields.len() > common_field_count as usize
-                    && fields[common_field_count as usize].name() == "eventheader_flags"
-                {
-                    PerfEventDecodingStyle::EventHeader
-                } else {
-                    PerfEventDecodingStyle::TraceEventFormat
-                };
-
-                return Self {
-                    system_name: string::String::from(system_name),
-                    name: string::String::from(name),
-                    print_fmt: string::String::from(print_fmt),
-                    fields,
-                    id,
-                    common_field_count,
-                    common_fields_size,
-                    decoding_style,
-                };
-            }
-            _ => {
-                return Self {
-                    system_name: string::String::new(),
-                    name: string::String::new(),
-                    print_fmt: string::String::new(),
-                    fields: vec::Vec::new(),
-                    id: 0,
-                    common_field_count: 0,
-                    common_fields_size: 0,
-                    decoding_style: PerfEventDecodingStyle::None,
-                }
-            }
-        }
-    }
-
-    /// Returns true if this format has no decoding information.
-    pub fn is_empty(&self) -> bool {
-        self.decoding_style == PerfEventDecodingStyle::None
-    }
-
-    /// Returns the value of the `system_name` parameter provided to the constructor,
-    /// e.g. `"user_events"`.
-    pub fn system_name(&self) -> &str {
-        &self.system_name
-    }
-
-    /// Returns the value of the "name:" property, e.g. `"my_event"`.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Returns the value of the "print fmt:" property.
-    pub fn print_fmt(&self) -> &str {
-        &self.print_fmt
-    }
-
-    /// Returns the fields from the "format:" property.
-    pub fn fields(&self) -> &[PerfFieldFormat] {
-        &self.fields
-    }
-
-    /// Returns the value of the "ID:" property. Note that this value gets
-    /// matched against the "common_type" field of an event, not the id field
-    /// of perf_event_attr or PerfSampleEventInfo.
-    pub fn id(&self) -> u32 {
-        self.id
-    }
-
-    /// Returns the number of "common_*" fields at the start of the event.
-    /// User fields start at this index. At present, there are 4 common fields:
-    /// common_type, common_flags, common_preempt_count, common_pid.
-    pub fn common_field_count(&self) -> u16 {
-        self.common_field_count
-    }
-
-    /// Returns the offset of the end of the last "common_*" field.
-    /// This is the offset of the first user field.
-    pub fn common_fields_size(&self) -> u16 {
-        self.common_fields_size
-    }
-
-    /// Returns the detected event decoding system - `None`, `TraceEventFormat` or `EventHeader`.
-    pub fn decoding_style(&self) -> PerfEventDecodingStyle {
-        self.decoding_style
-    }
-}
-
-impl Default for PerfEventFormat {
-    fn default() -> Self {
-        Self::empty()
+        self.element_size_shift = u8::MAX;
     }
 }
 
@@ -1306,84 +1014,9 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-/// Given start_pos pointing after the opening quote, returns pos after the closing quote.
-fn consume_string(start_pos: usize, bytes: &[u8], quote: u8) -> usize {
-    let mut pos = start_pos;
-    while pos < bytes.len() {
-        let consumed = bytes[pos];
-        pos += 1;
-
-        if consumed == quote {
-            break;
-        } else if consumed == b'\\' {
-            if pos >= bytes.len() {
-                debug_eprintln!("EOF within '\\' escape");
-                break; // Unexpected.
-            }
-
-            // Ignore whatever comes after the backslash, which
-            // is significant if it is quote or '\\'.
-            pos += 1;
-        }
-    }
-
-    return pos;
-}
-
-// Given start_pos after the opening brace, returns position after the closing brace.
-fn consume_braced(start_pos: usize, bytes: &[u8], open: u8, close: u8) -> usize {
-    let mut pos = start_pos;
-    let mut depth = 1;
-
-    while pos < bytes.len() {
-        let consumed = bytes[pos];
-        pos += 1;
-
-        if consumed == close {
-            depth -= 1;
-            if depth == 0 {
-                break;
-            }
-        } else if consumed == open {
-            depth += 1;
-        }
-    }
-
-    return pos;
-}
-
-fn until_first_nul(bytes: &[u8]) -> &[u8] {
-    let mut pos = 0;
-    while pos < bytes.len() && bytes[pos] != 0 {
-        pos += 1;
-    }
-
-    return &bytes[..pos];
-}
-
-fn is_eol_char(c: u8) -> bool {
-    c == b'\r' || c == b'\n'
-}
-
-fn is_space_or_tab(c: u8) -> bool {
-    c == b' ' || c == b'\t'
-}
-
-fn is_space_or_tab_or_semicolon(c: u8) -> bool {
-    c == b' ' || c == b'\t' || c == b';'
-}
-
-fn is_ident_start(c: u8) -> bool {
-    c.is_ascii_alphabetic() || c == b'_'
-}
-
-fn is_ident_continue(c: u8) -> bool {
-    c.is_ascii_alphanumeric() || c == b'_'
-}
-
 /// Skips leading spaces and tabs. Parses as hex if leading "0x", decimal otherwise.
 /// If no digits, returns None. Ignores overflow.
-fn ascii_to_u32(chars: &[u8]) -> Option<u32> {
+pub(crate) fn ascii_to_u32(chars: &[u8]) -> Option<u32> {
     let mut pos = 0;
     while pos < chars.len() && is_space_or_tab(chars[pos]) {
         pos += 1;
@@ -1428,4 +1061,74 @@ fn ascii_to_u32(chars: &[u8]) -> Option<u32> {
     }
 
     return if any_digits { Some(value) } else { None };
+}
+pub(crate) fn is_space_or_tab(c: u8) -> bool {
+    c == b' ' || c == b'\t'
+}
+
+/// Given start_pos pointing after the opening quote, returns pos after the closing quote.
+pub(crate) fn consume_string(start_pos: usize, bytes: &[u8], quote: u8) -> usize {
+    let mut pos = start_pos;
+    while pos < bytes.len() {
+        let consumed = bytes[pos];
+        pos += 1;
+
+        if consumed == quote {
+            break;
+        } else if consumed == b'\\' {
+            if pos >= bytes.len() {
+                debug_eprintln!("EOF within '\\' escape");
+                break; // Unexpected.
+            }
+
+            // Ignore whatever comes after the backslash, which
+            // is significant if it is quote or '\\'.
+            pos += 1;
+        }
+    }
+
+    return pos;
+}
+
+// Given start_pos after the opening brace, returns position after the closing brace.
+fn consume_braced(start_pos: usize, bytes: &[u8], open: u8, close: u8) -> usize {
+    let mut pos = start_pos;
+    let mut depth = 1;
+
+    while pos < bytes.len() {
+        let consumed = bytes[pos];
+        pos += 1;
+
+        if consumed == close {
+            depth -= 1;
+            if depth == 0 {
+                break;
+            }
+        } else if consumed == open {
+            depth += 1;
+        }
+    }
+
+    return pos;
+}
+
+fn is_space_or_tab_or_semicolon(c: u8) -> bool {
+    c == b' ' || c == b'\t' || c == b';'
+}
+
+fn is_ident_start(c: u8) -> bool {
+    c.is_ascii_alphabetic() || c == b'_'
+}
+
+fn is_ident_continue(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_'
+}
+
+fn until_first_nul(bytes: &[u8]) -> &[u8] {
+    let mut pos = 0;
+    while pos < bytes.len() && bytes[pos] != 0 {
+        pos += 1;
+    }
+
+    return &bytes[..pos];
 }
