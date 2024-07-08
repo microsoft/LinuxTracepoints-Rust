@@ -36,14 +36,19 @@ impl PerfEventAttrType {
     /// Returns a string like "Hardware" or "Software" for the type.
     /// If type is unknown, returns None.
     pub const fn as_string(self) -> Option<&'static str> {
-        match self {
-            Self::Hardware => Some("Hardware"),
-            Self::Software => Some("Software"),
-            Self::Tracepoint => Some("Tracepoint"),
-            Self::HwCache => Some("HwCache"),
-            Self::Raw => Some("Raw"),
-            Self::Breakpoint => Some("Breakpoint"),
-            _ => None,
+        const NAMES: [&str; 6] = [
+            "Hardware",
+            "Software",
+            "Tracepoint",
+            "HwCache",
+            "Raw",
+            "Breakpoint",
+        ];
+        let index = self.0 as usize;
+        if index < NAMES.len() {
+            return Some(NAMES[index]);
+        } else {
+            return None;
         }
     }
 }

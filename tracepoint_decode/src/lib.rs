@@ -5,7 +5,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::needless_return)]
 
-//! EventHeader decoding
+//! Tracepoint decoding
 
 pub use byte_reader::PerfByteReader;
 
