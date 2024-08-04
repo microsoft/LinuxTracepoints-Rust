@@ -3,7 +3,7 @@
 
 #![allow(non_upper_case_globals)]
 
-use std::fmt;
+use core::fmt;
 
 /// From: perf.data-file-format.txt, perf/util/header.h.
 #[repr(C)]

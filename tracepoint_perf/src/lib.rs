@@ -6,10 +6,11 @@
 
 //! perf.data file decoding
 
-pub use header_index::PerfHeaderIndex;
-pub use file_reader::PerfDataFileResult;
+pub use file_reader::PerfDataFileError;
 pub use file_reader::PerfDataFileEventOrder;
+pub use header_index::PerfHeaderIndex;
 
 mod file_reader;
 mod file_writer;
 mod header_index;
+mod input_file;

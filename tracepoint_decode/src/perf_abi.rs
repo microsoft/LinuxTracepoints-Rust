@@ -534,9 +534,6 @@ pub struct PerfEventAttr {
 }
 
 impl PerfEventAttr {
-    /// size_of::<PerfEventAttr>() == 128.
-    pub const SIZE_OF: usize = mem::size_of::<Self>();
-
     /// Byte offset of PerfEventAttr.attr_type = 0.
     pub const ATTR_TYPE_OFFSET: usize = 0;
 
@@ -1376,9 +1373,6 @@ pub struct PerfEventHeader {
 }
 
 impl PerfEventHeader {
-    /// size_of::<PerfEventHeader>() == 8.
-    pub const SIZE_OF: usize = mem::size_of::<Self>();
-
     /// Returns a header with all fields set to zero.
     pub const fn new() -> Self {
         Self {

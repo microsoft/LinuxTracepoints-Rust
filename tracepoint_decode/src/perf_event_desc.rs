@@ -31,13 +31,13 @@ impl PerfEventDesc {
     /// - `ids`: The sample_ids that share this descriptor.
     pub fn new(
         attr: PerfEventAttr,
-        name: &str,
+        name: string::String,
         format: Option<&sync::Arc<PerfEventFormat>>,
         ids: boxed::Box<[u64]>,
     ) -> PerfEventDesc {
         let mut this = PerfEventDesc {
             attr,
-            name: name.into(),
+            name,
             format: format.cloned(),
             ids,
         };

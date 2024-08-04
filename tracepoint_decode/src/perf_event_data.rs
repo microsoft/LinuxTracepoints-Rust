@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 use crate::*;
+use core::mem;
 use core::ops;
 
 /// Represents the header and raw data of a perf event.
@@ -64,7 +65,7 @@ pub struct PerfEventBytes<'dat> {
 impl<'dat> PerfEventBytes<'dat> {
     /// Constructs a new PerfEventBytes instance.
     pub const fn new(header: PerfEventHeader, data: &'dat [u8]) -> PerfEventBytes<'dat> {
-        debug_assert!(data.len() >= PerfEventHeader::SIZE_OF);
+        debug_assert!(data.len() >= mem::size_of::<PerfEventHeader>());
         return PerfEventBytes { header, data };
     }
 }
@@ -124,7 +125,7 @@ impl<'a> PerfNonSampleEventInfo<'a> {
         session_info: &'a PerfSessionInfo,
         event_desc: &'a PerfEventDesc,
     ) -> Self {
-        debug_assert!(data.len() >= PerfEventHeader::SIZE_OF);
+        debug_assert!(data.len() >= mem::size_of::<PerfEventHeader>());
         return Self {
             data,
             session_info,
@@ -259,7 +260,7 @@ impl<'a> PerfSampleEventInfo<'a> {
         session_info: &'a PerfSessionInfo,
         event_desc: &'a PerfEventDesc,
     ) -> Self {
-        debug_assert!(data.len() >= PerfEventHeader::SIZE_OF);
+        debug_assert!(data.len() >= mem::size_of::<PerfEventHeader>());
         return Self {
             data,
             session_info,
