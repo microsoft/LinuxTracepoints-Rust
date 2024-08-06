@@ -70,6 +70,11 @@ impl PerfEventDesc {
         }
     }
 
+    /// Event's format, or `None` if no format is available.
+    pub fn format_arc(&self) -> Option<&sync::Arc<PerfEventFormat>> {
+        return self.format.as_ref();
+    }
+
     /// The sample_ids that share this descriptor.
     pub const fn ids(&self) -> &[u64] {
         &self.ids

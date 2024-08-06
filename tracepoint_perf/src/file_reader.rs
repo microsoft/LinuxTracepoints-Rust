@@ -1,12 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-extern crate alloc;
-
-use alloc::string;
-use alloc::sync;
-use alloc::vec;
-
 use core::cmp;
 use core::fmt;
 use core::mem;
@@ -16,9 +10,13 @@ use core::str;
 use std::collections;
 use std::fs;
 use std::io;
+use std::string;
+use std::sync;
+use std::vec;
 
 use tracepoint_decode::*;
 
+use crate::file_abi::*;
 use crate::header_index::PerfHeaderIndex;
 use crate::input_file::InputFile;
 
@@ -36,10 +34,12 @@ const NORMAL_EVENT_MAX_SIZE: usize = 0x10000;
 const FREE_BUFFER_LARGER_THAN: usize = NORMAL_EVENT_MAX_SIZE;
 const FREE_HEADER_LARGER_THAN: usize = 0x10000;
 
+/// Reads a `perf.data` file, providing access to the events and associated data.
 #[derive(Debug)]
 pub struct PerfDataFileReader {
+    inner: DataFileReader,
+    current: EventBytesRef,
     file: Option<InputFile>,
-    reader: DataFileReader,
 }
 
 impl PerfDataFileReader {
@@ -82,15 +82,17 @@ impl PerfDataFileReader {
     /// Returns a new reader that is not associated with any file.
     pub fn new() -> Self {
         Self {
+            inner: DataFileReader::new(),
+            current: EventBytesRef::default(),
             file: None,
-            reader: DataFileReader::new(),
         }
     }
 
     /// Resets the reader to its default-constructed state.
     pub fn close(&mut self) {
+        self.inner.close();
+        self.current = EventBytesRef::default();
         self.file = None;
-        self.reader.close();
     }
 
     /// Close the current file, if any, then attempts to open the specified file for
@@ -102,21 +104,11 @@ impl PerfDataFileReader {
     /// events are encountered by ReadEvent.
     ///
     /// On successful return, the file will be positioned before the first event.
-    pub fn open_path(&mut self, path: &str, event_order: PerfDataFileEventOrder) -> io::Result<()> {
+    pub fn open_file(&mut self, path: &str, event_order: PerfDataFileEventOrder) -> io::Result<()> {
         self.close();
 
-        let mut options = fs::OpenOptions::new();
-        options.read(true);
-
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            const FILE_SHARE_READ: u32 = 0x00000001;
-            const FILE_SHARE_DELETE: u32 = 0x00000004;
-            options.share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE);
-        }
-
-        let mut file = InputFile::new(options.open(path)?);
-        self.reader.open(&mut file, event_order)?;
+        let mut file = InputFile::new(path)?;
+        self.inner.open(&mut file, event_order)?;
         self.file = Some(file);
         return Ok(());
     }
@@ -124,110 +116,109 @@ impl PerfDataFileReader {
     /// Returns true if the the currently-opened file's event data is formatted in
     /// big-endian byte order. (Use [`Self::byte_reader`] to do byte-swapping as appropriate.)
     pub fn source_big_endian(&self) -> bool {
-        self.reader.session_info.source_big_endian()
+        self.inner.session_info.source_big_endian()
     }
 
     /// Returns a PerfByteReader configured for the byte order of the events
     /// in the currently-opened file, i.e. PerfByteReader(source_big_endian()).
     pub fn byte_reader(&self) -> PerfByteReader {
-        self.reader.session_info.byte_reader()
+        self.inner.session_info.byte_reader()
     }
 
     /// Returns the position within the input file of the first event.
     pub fn data_begin_file_pos(&self) -> u64 {
-        self.reader.data_begin_file_pos
+        self.inner.data_begin_file_pos
     }
 
     /// If the input file was recorded in pipe mode, returns [`u64::MAX`].
     /// Otherwise, returns the position within the input file immediately after
     /// the last event.
     pub fn data_end_file_pos(&self) -> u64 {
-        self.reader.data_end_file_pos
+        self.inner.data_end_file_pos
     }
 
     /// Gets session information with clock offsets.
     pub fn session_info(&self) -> &PerfSessionInfo {
-        &self.reader.session_info
+        &self.inner.session_info
     }
 
     /// Combined data from `perf_file_header::attrs` and `PERF_RECORD_HEADER_ATTR`.
     pub fn event_desc_list(&self) -> &[PerfEventDesc] {
-        &self.reader.attrs.event_desc_list
+        &self.inner.attrs.event_desc_list
     }
 
     /// Combined data from `perf_file_header::attrs`, `PERF_RECORD_HEADER_ATTR`,
     /// and `HEADER_EVENT_DESC`, indexed by sample ID (from `attr.sample_id`).
     pub fn event_desc_by_id(&self, id: u64) -> Option<&PerfEventDesc> {
-        self.reader
+        self.inner
             .attrs
             .event_desc_id_to_index
             .get(&id)
-            .map(|&index| &self.reader.attrs.event_desc_list[index])
+            .map(|&index| &self.inner.attrs.event_desc_list[index])
     }
 
     /// Returns the `LongSize` parsed from a `PERF_HEADER_TRACING_DATA` header,
     /// or `0` if no `PERF_HEADER_TRACING_DATA` has been parsed.
     pub fn tracing_data_long_size(&self) -> u8 {
-        self.reader.tracing_data_long_size
+        self.inner.tracing_data_long_size
     }
 
     /// Returns the `PageSize` parsed from a `PERF_HEADER_TRACING_DATA` header,
     /// or `0` if no `PERF_HEADER_TRACING_DATA` has been parsed.
     pub fn tracing_data_page_size(&self) -> u32 {
-        self.reader.tracing_data_page_size
+        self.inner.tracing_data_page_size
     }
 
     /// Returns the `header_page` parsed from a `PERF_HEADER_TRACING_DATA` header,
     /// or empty if no `PERF_HEADER_TRACING_DATA` has been parsed.
     pub fn tracing_data_header_page(&self) -> &[u8] {
-        &self.reader.headers[PerfHeaderIndex::TracingData.0 as usize]
-            [self.reader.header_page.clone()]
+        &self.inner.headers[PerfHeaderIndex::TracingData.0 as usize][self.inner.header_page.clone()]
     }
 
     /// Returns the `header_event` parsed from a `PERF_HEADER_TRACING_DATA` header,
     /// or empty if no `PERF_HEADER_TRACING_DATA` has been parsed.
     pub fn tracing_data_header_event(&self) -> &[u8] {
-        &self.reader.headers[PerfHeaderIndex::TracingData.0 as usize]
-            [self.reader.header_event.clone()]
+        &self.inner.headers[PerfHeaderIndex::TracingData.0 as usize]
+            [self.inner.header_event.clone()]
     }
 
     /// Returns the number of ftraces parsed from a `PERF_HEADER_TRACING_DATA` header,
     /// or 0 if no `PERF_HEADER_TRACING_DATA` has been parsed.
     pub fn tracing_data_ftrace_count(&self) -> usize {
-        self.reader.ftraces.len()
+        self.inner.ftraces.len()
     }
 
     /// Returns the `ftrace` at the given index parsed from a `PERF_HEADER_TRACING_DATA` header.
     /// Requires `index < tracing_data_ftrace_count()`.
     pub fn tracing_data_ftrace(&self, index: usize) -> &[u8] {
-        &self.reader.headers[PerfHeaderIndex::TracingData.0 as usize]
-            [self.reader.ftraces[index].clone()]
+        &self.inner.headers[PerfHeaderIndex::TracingData.0 as usize]
+            [self.inner.ftraces[index].clone()]
     }
 
     /// Returns the `kallsyms` parsed from a `PERF_HEADER_TRACING_DATA` header,
     /// or empty if no `PERF_HEADER_TRACING_DATA` has been parsed.
     pub fn tracing_data_kallsyms(&self) -> &[u8] {
-        &self.reader.headers[PerfHeaderIndex::TracingData.0 as usize][self.reader.kallsyms.clone()]
+        &self.inner.headers[PerfHeaderIndex::TracingData.0 as usize][self.inner.kallsyms.clone()]
     }
 
     /// Returns the `printk` parsed from a `PERF_HEADER_TRACING_DATA` header,
     /// or empty if no `PERF_HEADER_TRACING_DATA` has been parsed.
     pub fn tracing_data_printk(&self) -> &[u8] {
-        &self.reader.headers[PerfHeaderIndex::TracingData.0 as usize][self.reader.printk.clone()]
+        &self.inner.headers[PerfHeaderIndex::TracingData.0 as usize][self.inner.printk.clone()]
     }
 
     /// Returns the `saved_cmdline` parsed from a `PERF_HEADER_TRACING_DATA` header,
     /// or empty if no `PERF_HEADER_TRACING_DATA` has been parsed.
     pub fn tracing_data_saved_cmd_line(&self) -> &[u8] {
-        &self.reader.headers[PerfHeaderIndex::TracingData.0 as usize][self.reader.cmd_line.clone()]
+        &self.inner.headers[PerfHeaderIndex::TracingData.0 as usize][self.inner.cmd_line.clone()]
     }
 
     /// Returns the raw data from the specified header. Data is in file-endian
     /// byte order (use [`Self::byte_reader`] to do byte-swapping as appropriate).
     /// Returns empty if the requested header was not loaded from the file.
     pub fn header(&self, index: PerfHeaderIndex) -> &[u8] {
-        if (index.0 as usize) < self.reader.headers.len() {
-            return &self.reader.headers[index.0 as usize];
+        if (index.0 as usize) < self.inner.headers.len() {
+            return &self.inner.headers[index.0 as usize];
         }
         return &[];
     }
@@ -235,8 +226,8 @@ impl PerfDataFileReader {
     /// Assumes the specified header is a header followed by a nul-terminated string.
     /// Returns the content of the string, skipping the header, up to the first nul.
     pub fn header_string(&self, index: PerfHeaderIndex) -> &[u8] {
-        if (index.0 as usize) < self.reader.headers.len() {
-            let header = self.reader.headers[index.0 as usize].as_slice();
+        if (index.0 as usize) < self.inner.headers.len() {
+            let header = self.inner.headers[index.0 as usize].as_slice();
             if header.len() >= 4 {
                 let nts = &header[4..];
                 for i in 0..nts.len() {
@@ -250,45 +241,43 @@ impl PerfDataFileReader {
         return b"";
     }
 
-    pub fn read_event<'dat, 'slf>(
-        &'slf mut self,
-        event_bytes: &mut PerfEventBytes<'dat>,
-    ) -> io::Result<bool>
-    where
-        'slf: 'dat,
-    {
+    /// Returns the header and data of the current event.
+    /// If there is no current event, returns a default-constructed `PerfEventBytes`.
+    pub fn current_event<'slf>(&'slf self) -> PerfEventBytes<'slf> {
+        if self.current.range.len() < PERF_EVENT_HEADER_SIZE {
+            return PerfEventBytes::new(PerfEventHeader::default(), &[]);
+        } else {
+            let range = self.current.range.start as usize..self.current.range.end as usize;
+            let bytes = &self.inner.buffers[self.current.buffer_index as usize][range];
+            let mut header = unsafe {
+                mem::transmute_copy::<[u8; PERF_EVENT_HEADER_SIZE], PerfEventHeader>(
+                    bytes[..PERF_EVENT_HEADER_SIZE].try_into().unwrap(),
+                )
+            };
+            if self.inner.session_info.byte_reader().byte_swap_needed() {
+                header.byte_swap();
+            }
+            return PerfEventBytes::new(header, bytes);
+        }
+    }
+
+    /// Reads the next event from the file. Returns `true` if an event was read,
+    /// `false` if the end of the file was reached. The event can be accessed
+    /// using [`Self::current_event`].
+    pub fn move_next_event(&mut self) -> io::Result<bool> {
         let file = match &mut self.file {
             None => return Err(io::ErrorKind::InvalidInput.into()),
             Some(file) => file,
         };
 
-        let mut bytes_ref = EventBytesRef::default();
-        let result = match self.reader.event_order {
-            PerfDataFileEventOrder::File => self.reader.read_event_file_order(file, &mut bytes_ref),
-            PerfDataFileEventOrder::Time => self.reader.read_event_time_order(file, &mut bytes_ref),
+        return match self.inner.event_order {
+            PerfDataFileEventOrder::File => {
+                self.inner.read_event_file_order(file, &mut self.current)
+            }
+            PerfDataFileEventOrder::Time => {
+                self.inner.read_event_time_order(file, &mut self.current)
+            }
         };
-
-        match result {
-            Ok(true) => {
-                let range = bytes_ref.range.start as usize..bytes_ref.range.end as usize;
-                let bytes = &self.reader.buffers[bytes_ref.buffer_index as usize][range];
-                let mut header = unsafe {
-                    mem::transmute_copy::<[u8; PERF_EVENT_HEADER_SIZE], PerfEventHeader>(
-                        bytes[..PERF_EVENT_HEADER_SIZE].try_into().unwrap(),
-                    )
-                };
-                if self.reader.session_info.byte_reader().byte_swap_needed() {
-                    header.byte_swap();
-                }
-                *event_bytes = PerfEventBytes::new(header, bytes);
-                return Ok(true);
-            }
-            _ => {
-                *event_bytes = PerfEventBytes::new(PerfEventHeader::default(), &[]);
-                self.file = None;
-                return result;
-            }
-        }
     }
 
     /// Tries to get event information from the event's prefix. The prefix is
@@ -303,19 +292,19 @@ impl PerfDataFileReader {
     where
         'slf: 'dat,
     {
-        let byte_reader = self.reader.session_info.byte_reader();
+        let byte_reader = self.inner.session_info.byte_reader();
 
-        if self.reader.attrs.sample_id_offset < U64_SIZE as i8 {
+        if self.inner.attrs.sample_id_offset < U64_SIZE as i8 {
             return Err(PerfDataFileError::NoData);
-        } else if self.reader.attrs.sample_id_offset as usize + U64_SIZE > event_bytes.data.len() {
+        } else if self.inner.attrs.sample_id_offset as usize + U64_SIZE > event_bytes.data.len() {
             return Err(PerfDataFileError::InvalidData);
         }
 
         let id =
-            byte_reader.read_u64(&event_bytes.data[self.reader.attrs.sample_id_offset as usize..]);
+            byte_reader.read_u64(&event_bytes.data[self.inner.attrs.sample_id_offset as usize..]);
 
-        let event_desc = match self.reader.attrs.event_desc_id_to_index.get(&id) {
-            Some(index) => &self.reader.attrs.event_desc_list[*index],
+        let event_desc = match self.inner.attrs.event_desc_id_to_index.get(&id) {
+            Some(index) => &self.inner.attrs.event_desc_list[*index],
             None => {
                 return Err(PerfDataFileError::IdNotFound);
             }
@@ -329,7 +318,7 @@ impl PerfDataFileReader {
 
         let mut info = PerfSampleEventInfo {
             data: event_bytes.data,
-            session_info: &self.reader.session_info,
+            session_info: &self.inner.session_info,
             event_desc,
             id,
             ip: 0,
@@ -539,23 +528,23 @@ impl PerfDataFileReader {
     where
         'slf: 'dat,
     {
-        let byte_reader = self.reader.session_info.byte_reader();
+        let byte_reader = self.inner.session_info.byte_reader();
 
         if event_bytes.header.header_type >= PerfEventHeaderType::UserTypeStart {
             return Err(PerfDataFileError::IdNotFound);
-        } else if self.reader.attrs.non_sample_id_offset < U64_SIZE as i8 {
+        } else if self.inner.attrs.non_sample_id_offset < U64_SIZE as i8 {
             return Err(PerfDataFileError::NoData);
-        } else if self.reader.attrs.non_sample_id_offset as usize > event_bytes.data.len() {
+        } else if self.inner.attrs.non_sample_id_offset as usize > event_bytes.data.len() {
             return Err(PerfDataFileError::InvalidData);
         }
 
         let id = byte_reader.read_u64(
             &event_bytes.data
-                [event_bytes.data.len() - self.reader.attrs.non_sample_id_offset as usize..],
+                [event_bytes.data.len() - self.inner.attrs.non_sample_id_offset as usize..],
         );
 
-        let event_desc = match self.reader.attrs.event_desc_id_to_index.get(&id) {
-            Some(index) => &self.reader.attrs.event_desc_list[*index],
+        let event_desc = match self.inner.attrs.event_desc_id_to_index.get(&id) {
+            Some(index) => &self.inner.attrs.event_desc_list[*index],
             None => {
                 return Err(PerfDataFileError::IdNotFound);
             }
@@ -568,7 +557,7 @@ impl PerfDataFileReader {
 
         let mut info = PerfNonSampleEventInfo::<'dat> {
             data: event_bytes.data,
-            session_info: &self.reader.session_info,
+            session_info: &self.inner.session_info,
             event_desc,
             id,
             cpu_reserved: 0,
@@ -650,7 +639,7 @@ impl PerfDataFileReader {
 }
 
 /// Logic of the reader. Separate object for lifetime analysis reasons
-/// (because we need to borrow `file` and `reader` mutably at the same time).
+/// (because we need to borrow `file` and `inner` mutably at the same time).
 #[derive(Debug)]
 struct DataFileReader {
     data_begin_file_pos: u64,
@@ -876,6 +865,7 @@ impl DataFileReader {
             }
 
             if let Some(result) = self.event_queue_pending_result.take() {
+                *event_bytes = EventBytesRef::default();
                 return result;
             }
 
@@ -954,10 +944,12 @@ impl DataFileReader {
         let event_start_file_pos = file.pos();
 
         if event_start_file_pos >= self.data_end_file_pos {
+            *event_bytes = EventBytesRef::default();
             return Ok(false); // normal-mode has reached EOF.
         }
 
         if PERF_EVENT_HEADER_SIZE as u64 > self.data_end_file_pos - event_start_file_pos {
+            *event_bytes = EventBytesRef::default();
             return Err(io::ErrorKind::InvalidData.into());
         }
 
@@ -966,8 +958,10 @@ impl DataFileReader {
             Ok(()) => (),
             Err(e) => {
                 if e.kind() == io::ErrorKind::UnexpectedEof && self.data_end_file_pos == u64::MAX {
+                    *event_bytes = EventBytesRef::default();
                     return Ok(false); // pipe-mode has reached EOF.
                 } else {
+                    *event_bytes = EventBytesRef::default();
                     return Err(e);
                 }
             }
@@ -983,12 +977,14 @@ impl DataFileReader {
 
         // Event size must be at least the size of the header.
         if event_header.size < PERF_EVENT_HEADER_SIZE as u16 {
+            *event_bytes = EventBytesRef::default();
             return Err(io::ErrorKind::InvalidData.into());
         }
 
         // Event size must not exceed the amount of data remaining in the file's event data section.
         let event_data_len = event_header.size - PERF_EVENT_HEADER_SIZE as u16;
         if event_data_len as u64 > self.data_end_file_pos - file.pos() {
+            *event_bytes = EventBytesRef::default();
             return Err(io::ErrorKind::InvalidData.into());
         }
 
@@ -998,6 +994,7 @@ impl DataFileReader {
 
             self.current_buffer += 1;
             if self.current_buffer < 1 {
+                *event_bytes = EventBytesRef::default();
                 return Err(io::ErrorKind::OutOfMemory.into());
             }
 
@@ -1041,6 +1038,7 @@ impl DataFileReader {
             }
             PerfEventHeaderType::HeaderTracingData => {
                 if event_data_len < U32_SIZE as u16 {
+                    *event_bytes = EventBytesRef::default();
                     return Err(io::ErrorKind::InvalidData.into());
                 }
 
@@ -1052,9 +1050,11 @@ impl DataFileReader {
                 ) {
                     Ok(true) => (),
                     Ok(false) => {
+                        *event_bytes = EventBytesRef::default();
                         return Err(io::ErrorKind::InvalidData.into());
                     }
                     Err(e) => {
+                        *event_bytes = EventBytesRef::default();
                         return Err(e);
                     }
                 }
@@ -1075,6 +1075,7 @@ impl DataFileReader {
             }
             PerfEventHeaderType::Auxtrace => {
                 if event_data_len < U64_SIZE as u16 {
+                    *event_bytes = EventBytesRef::default();
                     return Err(io::ErrorKind::InvalidData.into());
                 }
 
@@ -1086,9 +1087,11 @@ impl DataFileReader {
                 ) {
                     Ok(true) => (),
                     Ok(false) => {
+                        *event_bytes = EventBytesRef::default();
                         return Err(io::ErrorKind::InvalidData.into());
                     }
                     Err(e) => {
+                        *event_bytes = EventBytesRef::default();
                         return Err(e);
                     }
                 }
@@ -1465,17 +1468,19 @@ impl DataFileReader {
         }
 
         // SAFETY: Extracting data from a byte array.
-        let clock_data = unsafe {
+        let mut clock_data = unsafe {
             mem::transmute_copy::<[u8; CLOCK_DATA_SIZE], ClockData>(
                 data[..CLOCK_DATA_SIZE].try_into().unwrap(),
             )
         };
-        let byte_reader = self.session_info.byte_reader();
-        if 1 <= byte_reader.fix_u32(clock_data.version) {
+        if self.session_info.byte_reader().byte_swap_needed() {
+            clock_data.byte_swap();
+        }
+        if 1 <= clock_data.version {
             self.session_info.set_clock_data(
-                byte_reader.fix_u32(clock_data.clockid),
-                byte_reader.fix_u64(clock_data.wall_clock_ns),
-                byte_reader.fix_u64(clock_data.clockid_time_ns),
+                clock_data.clockid,
+                clock_data.wall_clock_ns,
+                clock_data.clockid_time_ns,
             );
         }
     }
@@ -1868,79 +1873,6 @@ pub enum PerfDataFileEventOrder {
     /// FinishedRound event, and EndOfFile. Within each round, events are
     /// stable-sorted by the event's timestamp.
     Time,
-}
-
-#[derive(Debug)]
-#[repr(C)]
-struct ClockData {
-    version: u32,
-    clockid: u32,
-    wall_clock_ns: u64,
-    clockid_time_ns: u64,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-#[repr(C)]
-struct PerfFileSection {
-    offset: u64, // offset from start of file
-    size: u64,   // size of the section
-}
-
-impl PerfFileSection {
-    fn byte_swap(&mut self) {
-        self.offset = self.offset.swap_bytes();
-        self.size = self.size.swap_bytes();
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-#[repr(C)]
-struct PerfFileHeaderPipe {
-    magic: u64, // If correctly byte-swapped, this will be equal to PERFILE2_MAGIC_HOST_ENDIAN.
-    size: u64,  // Size of the header, 16 for pipe-mode or 104 for seek-mode.
-}
-
-impl PerfFileHeaderPipe {
-    fn byte_swap(&mut self) {
-        self.magic = self.magic.swap_bytes();
-        self.size = self.size.swap_bytes();
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-#[repr(C)]
-struct PerfFileHeaderRest {
-    attr_size: u64, // size of (perf_event_attrs + perf_file_section) in attrs.
-    attrs: PerfFileSection,
-    data: PerfFileSection,
-    event_types: PerfFileSection, // Not used
-    flags: [u64; 4],              // 256-bit bitmap based on HEADER_BITS
-}
-
-impl PerfFileHeaderRest {
-    fn byte_swap(&mut self) {
-        self.attr_size = self.attr_size.swap_bytes();
-        self.attrs.byte_swap();
-        self.data.byte_swap();
-        self.event_types.byte_swap();
-        for i in 0..4 {
-            self.flags[i] = self.flags[i].swap_bytes();
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-#[repr(C)]
-struct PerfFileHeader {
-    pipe: PerfFileHeaderPipe,
-    rest: PerfFileHeaderRest,
-}
-
-impl PerfFileHeader {
-    fn byte_swap(&mut self) {
-        self.pipe.byte_swap();
-        self.rest.byte_swap();
-    }
 }
 
 #[derive(Debug, Default)]

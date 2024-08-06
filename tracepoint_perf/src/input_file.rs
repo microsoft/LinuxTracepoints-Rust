@@ -1,9 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-extern crate alloc;
-
-use alloc::vec;
 use core::mem;
 use core::slice;
 
@@ -11,6 +8,7 @@ use std::fs;
 use std::io;
 use std::io::Read;
 use std::io::Seek;
+use std::vec;
 
 #[derive(Debug)]
 pub(crate) struct InputFile {
@@ -20,12 +18,23 @@ pub(crate) struct InputFile {
 }
 
 impl InputFile {
-    pub fn new(file: fs::File) -> Self {
-        Self {
-            inner: file,
+    pub fn new(path: &str) -> io::Result<Self> {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_SHARE_READ: u32 = 0x00000001;
+            const FILE_SHARE_DELETE: u32 = 0x00000004;
+            options.share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE);
+        }
+
+        return Ok(Self {
+            inner: options.open(path)?,
             inner_pos: 0,
             inner_len: 0,
-        }
+        });
     }
 
     pub fn len(&self) -> u64 {
@@ -50,14 +59,15 @@ impl InputFile {
                 "seek past end of file",
             ));
         } else {
-            self.inner_pos = new_pos;
-            return self.inner.seek(io::SeekFrom::Start(new_pos));
+            self.inner_pos = self.inner.seek(io::SeekFrom::Start(new_pos))?;
+            return Ok(self.inner_pos);
         }
     }
 
     pub fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        self.inner.read_exact(buf)?;
         self.inner_pos += buf.len() as u64;
-        return self.inner.read_exact(buf);
+        return Ok(());
     }
 
     pub fn read_struct<T>(&mut self, value: &mut T) -> io::Result<()>
@@ -82,7 +92,7 @@ impl InputFile {
 
         unsafe {
             // Safety: We've just reserved space for the new data, so it's safe to write into it.
-            let vec_bytes = slice::from_raw_parts_mut(vec.as_mut_ptr(), vec.len());
+            let vec_bytes = slice::from_raw_parts_mut(vec.as_mut_ptr(), new_len);
 
             let result = self.read_exact(&mut vec_bytes[old_len..]);
             if result.is_ok() {

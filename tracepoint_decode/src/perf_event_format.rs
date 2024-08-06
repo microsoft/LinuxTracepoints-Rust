@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+use core::fmt;
+
 use alloc::string;
 use alloc::vec;
 
@@ -288,6 +290,36 @@ impl PerfEventFormat {
     /// Returns the detected event decoding system - `None`, `TraceEventFormat` or `EventHeader`.
     pub fn decoding_style(&self) -> PerfEventDecodingStyle {
         self.decoding_style
+    }
+
+    /// Writes a string representation of this format to the provided string.
+    /// The string representation is in the format of a tracefs "format" file.
+    pub fn write_to<W: fmt::Write>(&self, s: &mut W) -> fmt::Result {
+        write!(s, "name: {}\n", self.name())?;
+        write!(s, "ID: {}\n", self.id())?;
+        s.write_str("format:\n")?;
+
+        let common_field_count = self.common_field_count() as usize;
+        for (i, field) in self.fields().iter().enumerate() {
+            write!(
+                s,
+                "\tfield:{};\toffset:{};\tsize:{};",
+                field.field(),
+                field.offset(),
+                field.size(),
+            )?;
+            if let Some(signed) = field.signed() {
+                write!(s, "\tsigned:{};\n", signed as u8)?;
+            } else {
+                s.write_str("\n")?;
+            }
+
+            if i + 1 == common_field_count {
+                s.write_str("\n")?;
+            }
+        }
+
+        return write!(s, "\nprint fmt: {}\n", self.print_fmt());
     }
 }
 
