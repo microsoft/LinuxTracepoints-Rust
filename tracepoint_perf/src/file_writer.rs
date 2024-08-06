@@ -315,9 +315,9 @@ impl PerfDataFileWriter {
         header.extend_from_slice(&clockid_time_ns.to_ne_bytes());
     }
 
-    // Sets or resets the data for headers available in the specified `session_info`:
-    // - `CLOCKID`: Set based on `session_info.clock_id()`; cleared if `clock_id() == 0xFFFFFFFF`.
-    // - `CLOCK_DATA`: Set based on `session_info.clock_offset()`; cleared if `!session_info.clock_offset_known()`.
+    /// Sets or resets the data for headers available in the specified `session_info`:
+    /// - `CLOCKID`: Set based on `session_info.clock_id()`; cleared if `clock_id() == 0xFFFFFFFF`.
+    /// - `CLOCK_DATA`: Set based on `session_info.clock_offset()`; cleared if `!session_info.clock_offset_known()`.
     pub fn set_session_info_headers(&mut self, session_info: &PerfSessionInfo) {
         let clock_id = session_info.clock_id();
         if clock_id == 0xFFFFFFFF {
@@ -369,6 +369,8 @@ impl PerfDataFileWriter {
     /// `finalize_and_close()` if no explicit header data was provided via
     /// `set_header(PERF_HEADER_TRACING_DATA, ...)`.
     ///
+    /// A value of `None` indicates "keep the existing value".
+    ///
     /// Returns false and does nothing if any of the arguments are invalid:
     ///
     /// - `long_size == 0`
@@ -377,17 +379,22 @@ impl PerfDataFileWriter {
     /// - `printk.len() >= 0x80000000`
     /// - `ftraces.len() >= 0x80000000`
     ///
-    /// The `long_size` and `page_size` parameters are required. The `finalize_and_close`
-    /// function will not synthesize a `PERF_HEADER_TRACING_DATA` header if these values
-    /// are unset.
+    /// Notes:
     ///
-    /// For all of the other parameters, a value of `None` indicates "keep the
-    /// existing value".
-    ///
-    /// - `long_size`: Value should be sizeof(size_t) of the system where the trace data comes from.
-    /// - `page_size`: Value should be sysconf(_SC_PAGESIZE) of the system where the trace data comes from.
-    /// - `header_page`: If empty, will default to timestamp64+commit64+overwrite8+data4080.
-    /// - `header_event`: If empty, will default to type_len:5, time_delta:27, array:32.
+    /// - `long_size` should be the value of `sizeof(size_t)` on the system where
+    ///   the trace data comes from. This value is required -- if it is not set,
+    ///   the `finalize_and_close` function will not synthesize a
+    ///   `PERF_HEADER_TRACING_DATA` header.
+    /// - `page_size` should be the value of `sysconf(_SC_PAGESIZE)` on the system where
+    ///   the trace data comes from. This value is required -- if it is not set,
+    ///   the `finalize_and_close` function will not synthesize a
+    ///   `PERF_HEADER_TRACING_DATA` header.
+    /// - `header_page` is optional. If not set, this will default to
+    ///   timestamp64 + commit64 + overwrite8 + data4080.
+    /// - `header_event` is optional. If not set, this will default to
+    ///   type_len:5, time_delta:27, array:32.
+    /// - The remaining arguments are optional. If not set, the corresponding
+    ///   sections will be empty.
     pub fn set_tracing_data(
         &mut self,
         long_size: u8,

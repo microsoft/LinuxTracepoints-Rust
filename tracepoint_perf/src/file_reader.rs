@@ -1261,9 +1261,10 @@ impl DataFileReader {
         pos += version_sz.len() + 1;
 
         // SAFETY: parse<f64> treats input as byte (doesn't care about UTF-8 validity).
-        let tracing_data_version = unsafe { str::from_utf8_unchecked(version_sz) }
-            .parse::<f64>()
-            .unwrap_or(0.0);
+        let tracing_data_version =
+            unsafe { str::from_utf8_unchecked(version_sz) }
+                .parse::<f64>()
+                .unwrap_or(0.0);
 
         // Big Endian, LongSize, PageSize
 
@@ -1569,7 +1570,7 @@ impl DataFileReader {
     fn read_sz(data: &[u8], pos: usize) -> Option<&[u8]> {
         for i in pos..data.len() {
             if data[i] == 0 {
-                return Some(&data[pos..pos + i]);
+                return Some(&data[pos..i]);
             }
         }
         return None;

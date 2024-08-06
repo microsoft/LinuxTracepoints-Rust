@@ -9,6 +9,7 @@
 pub use file_reader::PerfDataFileError;
 pub use file_reader::PerfDataFileEventOrder;
 pub use file_reader::PerfDataFileReader;
+pub use file_writer::PerfDataFileWriter;
 pub use header_index::PerfHeaderIndex;
 
 mod file_abi;

@@ -18,6 +18,9 @@ impl PerfHeaderIndex {
     /// PERF_HEADER_TRACING_DATA, PERF_HEADER_FIRST_FEATURE
     pub const TracingData: Self = Self(1);
 
+    /// PERF_HEADER_TRACING_DATA, PERF_HEADER_FIRST_FEATURE
+    pub const FirstFeature: Self = Self(1);
+
     /// PERF_HEADER_BUILD_ID
     pub const BuildId: Self = Self(2);
 
