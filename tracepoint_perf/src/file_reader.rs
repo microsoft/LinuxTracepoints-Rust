@@ -243,7 +243,7 @@ impl PerfDataFileReader {
 
     /// Returns the header and data of the current event.
     /// If there is no current event, returns a default-constructed `PerfEventBytes`.
-    pub fn current_event<'slf>(&'slf self) -> PerfEventBytes<'slf> {
+    pub fn current_event(&self) -> PerfEventBytes {
         if self.current.range.len() < PERF_EVENT_HEADER_SIZE {
             return PerfEventBytes::new(PerfEventHeader::default(), &[]);
         } else {
@@ -530,7 +530,7 @@ impl PerfDataFileReader {
     {
         let byte_reader = self.inner.session_info.byte_reader();
 
-        if event_bytes.header.header_type >= PerfEventHeaderType::UserTypeStart {
+        if event_bytes.header.ty >= PerfEventHeaderType::UserTypeStart {
             return Err(PerfDataFileError::IdNotFound);
         } else if self.inner.attrs.non_sample_id_offset < U64_SIZE as i8 {
             return Err(PerfDataFileError::NoData);
@@ -635,6 +635,12 @@ impl PerfDataFileReader {
         debug_assert!(pos >= U64_SIZE);
         debug_assert!(pos < 0x10000 / U64_SIZE);
         return Ok(info);
+    }
+}
+
+impl Default for PerfDataFileReader {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1019,7 +1025,7 @@ impl DataFileReader {
 
         // Successfully read the basic event data.
         // Check for any special cases based on the type.
-        match event_header.header_type {
+        match event_header.ty {
             PerfEventHeaderType::HeaderAttr => {
                 if event_data_len >= PerfEventAttrSize::Ver0.0 as u16 {
                     let attr_size = byte_reader
@@ -1261,10 +1267,9 @@ impl DataFileReader {
         pos += version_sz.len() + 1;
 
         // SAFETY: parse<f64> treats input as byte (doesn't care about UTF-8 validity).
-        let tracing_data_version =
-            unsafe { str::from_utf8_unchecked(version_sz) }
-                .parse::<f64>()
-                .unwrap_or(0.0);
+        let tracing_data_version = unsafe { str::from_utf8_unchecked(version_sz) }
+            .parse::<f64>()
+            .unwrap_or(0.0);
 
         // Big Endian, LongSize, PageSize
 
@@ -1364,13 +1369,13 @@ impl DataFileReader {
                 assign_latin1(&mut format_file_contents, &data[section_value]);
 
                 let long_size_is_64 = self.tracing_data_long_size != 4;
-                let event_format =
-                    PerfEventFormat::parse(long_size_is_64, &system_name, &format_file_contents);
-                if !event_format.is_empty() {
+                if let Some(event_format) =
+                    PerfEventFormat::parse(long_size_is_64, &system_name, &format_file_contents)
+                {
                     let mut common_type_offset = OFFSET_UNSET;
                     let mut common_type_size = 0;
                     for i in 0..event_format.common_field_count() {
-                        let field = &event_format.fields()[i as usize];
+                        let field = &event_format.fields()[i];
                         if field.name() == "common_type" {
                             if field.offset() <= i8::MAX as u16
                                 && (field.size() == 1 || field.size() == 2 || field.size() == 4)
@@ -1406,7 +1411,7 @@ impl DataFileReader {
 
         // Update EventDesc with the new formats.
         for desc in &mut self.attrs.event_desc_list {
-            if desc.format().is_empty()
+            if desc.format().is_none()
                 && desc.attr().attr_type == PerfEventAttrType::Tracepoint
                 && self
                     .attrs
@@ -1929,6 +1934,8 @@ fn string_from_latin1(bytes: &[u8]) -> string::String {
     return s;
 }
 
+// TODO: is the encoding of strings in perf files specified anywhere?
+// Used for: system_name, format_file_contents, event_desc name.
 fn assign_latin1(s: &mut string::String, bytes: &[u8]) {
     s.clear();
     s.reserve(bytes.len());

@@ -61,13 +61,9 @@ impl PerfEventDesc {
         return &self.name;
     }
 
-    /// Event's format, or an empty format if no format is available.
-    pub fn format(&self) -> &PerfEventFormat {
-        if let Some(format) = &self.format {
-            return format;
-        } else {
-            return &perf_event_format::EMPTY;
-        }
+    /// Event's format, or None if no format is available.
+    pub fn format(&self) -> Option<&PerfEventFormat> {
+        return self.format.as_deref();
     }
 
     /// Event's format, or `None` if no format is available.

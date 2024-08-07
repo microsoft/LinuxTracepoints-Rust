@@ -1,4 +1,4 @@
-# EventHeader for Rust
+# Dynamic EventHeader tracepoint logging for Rust
 
 [![Crates.io][crates-badge]][crates-url]
 [![Documentation][docs-badge]][docs-url]

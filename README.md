@@ -1,4 +1,4 @@
-# EventHeader for Rust
+# Linux Tracepoints for Rust
 
 - [eventheader](eventheader) provides an efficient high-level macro-based API
   for generating compile-time specified events using the `EventHeader`
@@ -9,10 +9,21 @@
   for generating runtime-specified events using the `EventHeader`
   convention. The events are written using the `user_events` system.
   This is intended for use as an implementation layer for a higher-level
-  API like OpenTelemetry.
+  dynamic-event API like OpenTelemetry.
 - [eventheader_macros](eventheader_macros) provides proc macros for
   compile-time-defined events. The macros are exposed by the
   `eventheader` crate.
+- [eventheader_types](eventheader_types) contains type definitions for the
+  `EventHeader` encoding convention.
+- [tracepoint](tracepoint) provides low-level building blocks for logging
+  [Tracepoints](https://www.kernel.org/doc/html/latest/trace/tracepoints.html)
+  via the Linux [user_events](https://docs.kernel.org/trace/user_events.html)
+  system.
+- [tracepoint_decode](tracepoint_decode) provides support for decoding tracepoint
+  event data, including support for both traditional (tracefs) event decoding and
+  `EventHeader` decoding.
+- [tracepoint_perf](tracepoint_perf) provides support for reading and writing the
+  `perf.data` file format.
 
 ## Contributing
 

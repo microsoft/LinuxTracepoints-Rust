@@ -199,7 +199,7 @@ impl<'low, const CONTROL_CHARS_ONLY: bool, F: Filter> JsonFilterImpl<'low, CONTR
                     b'0',
                     b'0',
                     if value < 0x10 { b'0' } else { b'1' },
-                    Self::to_hex_char_uppercase(value),
+                    Self::to_hex_char_uppercase(value & 0xF),
                 ];
 
                 // Validated: "uescape" is valid utf-8.
@@ -245,7 +245,7 @@ impl<'low, const CONTROL_CHARS_ONLY: bool, F: Filter> JsonFilterImpl<'low, CONTR
 
     #[inline]
     fn to_hex_char_uppercase(nibble: u8) -> u8 {
-        return match nibble & 0xF {
+        return match nibble {
             0..=9 => b'0' + nibble,
             10..=15 => b'A' + nibble - 10,
             _ => unreachable!(),

@@ -81,14 +81,14 @@ fn main() -> process::ExitCode {
                         e,
                         "input.move_next_event failed, ignoring remainder of file",
                     );
-                    break;
+                    break; // Error, break out of loop.
                 }
-                Ok(false) => break,
-                Ok(true) => {}
+                Ok(false) => break, // EOF, break out of loop.
+                Ok(true) => {}      // Got an event, continue.
             }
 
             let event = input.current_event();
-            match event.header.header_type {
+            match event.header.ty {
                 td::PerfEventHeaderType::HeaderAttr => {
                     // Pseudo-event, conflicts with AddEventDesc.
                     // PerfDataFileReader automatically merges data from this event into its own
@@ -122,10 +122,9 @@ fn main() -> process::ExitCode {
                     match input.get_sample_event_info(&event) {
                         Err(e) => {
                             eprintln!(
-                                "{}: warning {} : {}.",
+                                "{}: warning {} : input.get_sample_event_info failed, deleting output file.",
                                 &input_path,
                                 e,
-                                "input.get_sample_event_info failed, deleting output file.",
                             );
                             output.close_no_finalize();
                             _ = fs::remove_file(output_path);
@@ -133,11 +132,17 @@ fn main() -> process::ExitCode {
                         }
                         Ok(info) => {
                             let desc = info.event_desc;
-                            if !desc.format().is_empty() && output.add_tracepoint_event_desc(&desc)
-                            {
-                                // We don't need to add_event_desc for the IDs covered by this event_desc.
-                                for id in desc.ids() {
-                                    sample_ids_used.insert(*id);
+                            if let Some(format) = desc.format_arc() {
+                                if output.add_tracepoint_event_desc(
+                                    desc.ids(),
+                                    desc.attr(),
+                                    desc.name(),
+                                    format,
+                                ) {
+                                    // We don't need to add_event_desc for the IDs covered by this event_desc.
+                                    for id in desc.ids() {
+                                        sample_ids_used.insert(*id);
+                                    }
                                 }
                             }
                         }
@@ -170,14 +175,14 @@ fn main() -> process::ExitCode {
         // Prefer data from descriptors that have names.
         for desc in input.event_desc_list() {
             if !desc.name().is_empty() {
-                merge_event_desc(&mut output, &output_path, &mut sample_ids_used, &desc);
+                merge_event_desc(&mut output, &output_path, &mut sample_ids_used, desc);
             }
         }
 
         // Fill gaps (if any) using descriptors that don't have names.
         for desc in input.event_desc_list() {
             if desc.name().is_empty() {
-                merge_event_desc(&mut output, &output_path, &mut sample_ids_used, &desc);
+                merge_event_desc(&mut output, &output_path, &mut sample_ids_used, desc);
             }
         }
 
@@ -197,16 +202,19 @@ fn main() -> process::ExitCode {
             }
         }
 
-        output.set_tracing_data(
+        output.set_tracing_data_required(
             input.tracing_data_long_size(),
             input.tracing_data_page_size(),
-            Some(input.tracing_data_header_page()),
-            Some(input.tracing_data_header_event()),
-            None, // TODO:Some(input.tracing_data_ftrace()),
-            Some(input.tracing_data_kallsyms()),
-            Some(input.tracing_data_printk()),
-            Some(input.tracing_data_saved_cmd_line()),
         );
+        output.set_tracing_data_header_page(input.tracing_data_header_page());
+        output.set_tracing_data_header_event(input.tracing_data_header_event());
+        output.set_tracing_data_kallsyms(input.tracing_data_kallsyms());
+        output.set_tracing_data_printk(input.tracing_data_printk());
+        output.set_tracing_data_saved_cmd_line(input.tracing_data_saved_cmd_line());
+        output.set_tracing_data_clear_ftraces();
+        for index in 0..input.tracing_data_ftrace_count() {
+            output.set_tracing_data_add_ftrace(input.tracing_data_ftrace(index));
+        }
 
         if let Err(e) = output.finalize_and_close() {
             write_error_message(&output_path, e, "output.finalize_and_close failed");
@@ -219,11 +227,11 @@ fn main() -> process::ExitCode {
         any_files_converted = true;
     }
 
-    return if any_files_converted {
+    if any_files_converted {
         process::ExitCode::SUCCESS
     } else {
         process::ExitCode::FAILURE
-    };
+    }
 }
 
 fn merge_event_desc(
@@ -240,20 +248,14 @@ fn merge_event_desc(
         }
     }
 
-    if !sample_ids_buffer.is_empty() {
-        let new_desc = td::PerfEventDesc::new(
-            *desc.attr(),
-            desc.name().to_string(),
-            desc.format_arc(),
-            sample_ids_buffer.into_boxed_slice(),
+    if !sample_ids_buffer.is_empty()
+        && !output.add_event_desc(&sample_ids_buffer, desc.attr(), desc.name())
+    {
+        write_warning_message(
+            output_path,
+            io::ErrorKind::InvalidData.into(),
+            "output.add_event_desc failed, metadata incomplete",
         );
-        if !output.add_event_desc(&new_desc) {
-            write_warning_message(
-                output_path,
-                io::ErrorKind::InvalidData.into(),
-                "output.add_event_desc failed, metadata incomplete",
-            );
-        }
     }
 }
 

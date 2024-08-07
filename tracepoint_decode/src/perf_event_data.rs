@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 use crate::*;
+use core::fmt;
 use core::mem;
 use core::ops;
 
@@ -176,6 +177,42 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     pub const fn time_spec(&self) -> PerfTimeSpec {
         self.session_info.time_to_time_spec(self.time)
     }
+
+    /// Returns a formatter for the event's "meta" suffix.
+    ///
+    /// The returned formatter writes event metadata as a comma-separated list of 0 or more
+    /// JSON name-value pairs, e.g. `"time": "...", "cpu": 3` (including the quotation marks).
+    ///
+    /// The included items default to [`PerfMetaOptions::Default`], but can be customized with
+    /// the `meta_options()` property.
+    ///
+    /// One name-value pair is appended for each metadata item that is both requested
+    /// by `meta_options` and has a meaningful value available in the event. For example,
+    /// the "cpu" metadata item is only appended if the event has a non-zero `Cpu` value,
+    /// even if the `meta_options` property includes [`PerfMetaOptions::Cpu`].
+    ///
+    /// The following metadata items are supported:
+    ///
+    /// - `"time": "2024-01-01T23:59:59.123456789Z"` if clock offset is known, or a float number of seconds
+    ///   (assumes the clock value is in nanoseconds), or omitted if not present.
+    /// - `"cpu": 3` (omitted if unavailable)
+    /// - `"pid": 123` (omitted if unavailable)
+    /// - `"tid": 124` (omitted if unavailable or redundant)
+    /// - `"provider": "SystemName"` (omitted if unavailable)
+    /// - `"event": "TracepointName"` (omitted if unavailable)
+    pub const fn json_meta_display(&self) -> JsonMetaDisplay {
+        JsonMetaDisplay {
+            session_info: self.session_info,
+            event_desc: self.event_desc,
+            time: self.time,
+            cpu: self.cpu,
+            pid: self.pid,
+            tid: self.tid,
+            add_comma_before_first_item: false,
+            meta_options: PerfMetaOptions::Default,
+            convert_options: PerfConvertOptions::Default,
+        }
+    }
 }
 
 /// Information about a sample event, typically returned by
@@ -319,8 +356,8 @@ impl<'a> PerfSampleEventInfo<'a> {
         self.session_info.time_to_time_spec(self.time)
     }
 
-    /// Event's format, or an empty format if no format data available.
-    pub fn format(&self) -> &PerfEventFormat {
+    /// Event's format, or None if no format data available.
+    pub fn format(&self) -> Option<&PerfEventFormat> {
         self.event_desc.format()
     }
 
@@ -350,14 +387,197 @@ impl<'a> PerfSampleEventInfo<'a> {
     ///
     /// Valid if `sample_type()` contains `Raw` and format is available.
     pub fn user_data(&self) -> &'a [u8] {
-        let format = self.format();
-        let raw_len = self.raw_range.end - self.raw_range.start;
-        let user_offset = format.common_fields_size();
-        if format.is_empty() || user_offset > raw_len {
-            return &[];
-        } else {
-            return &self.data[(self.raw_range.start + user_offset) as usize
-                ..(self.raw_range.end - user_offset) as usize];
+        if let Some(format) = self.format() {
+            let raw_len = self.raw_range.end - self.raw_range.start;
+            let user_offset = format.common_fields_size();
+            if user_offset <= raw_len {
+                return &self.data
+                    [(self.raw_range.start + user_offset) as usize..self.raw_range.end as usize];
+            }
         }
+        return &[];
+    }
+
+    /// Returns a formatter for the event's "meta" suffix.
+    ///
+    /// The returned formatter writes event metadata as a comma-separated list of 0 or more
+    /// JSON name-value pairs, e.g. `"time": "...", "cpu": 3` (including the quotation marks).
+    ///
+    /// The included items default to [`PerfMetaOptions::Default`], but can be customized with
+    /// the `meta_options()` property.
+    ///
+    /// One name-value pair is appended for each metadata item that is both requested
+    /// by `meta_options` and has a meaningful value available in the event. For example,
+    /// the "cpu" metadata item is only appended if the event has a non-zero `Cpu` value,
+    /// even if the `meta_options` property includes [`PerfMetaOptions::Cpu`].
+    ///
+    /// The following metadata items are supported:
+    ///
+    /// - `"time": "2024-01-01T23:59:59.123456789Z"` if clock offset is known, or a float number of seconds
+    ///   (assumes the clock value is in nanoseconds), or omitted if not present.
+    /// - `"cpu": 3` (omitted if unavailable)
+    /// - `"pid": 123` (omitted if unavailable)
+    /// - `"tid": 124` (omitted if unavailable or redundant)
+    /// - `"provider": "SystemName"` (omitted if unavailable)
+    /// - `"event": "TracepointName"` (omitted if unavailable)
+    pub const fn json_meta_display(&self) -> JsonMetaDisplay {
+        JsonMetaDisplay {
+            session_info: self.session_info,
+            event_desc: self.event_desc,
+            time: self.time,
+            cpu: self.cpu,
+            pid: self.pid,
+            tid: self.tid,
+            add_comma_before_first_item: false,
+            meta_options: PerfMetaOptions::Default,
+            convert_options: PerfConvertOptions::Default,
+        }
+    }
+}
+
+/// Formatter for the "meta" suffix of an event, i.e. `"time": "...", "cpu": 3`.
+pub struct JsonMetaDisplay<'a> {
+    session_info: &'a PerfSessionInfo,
+    event_desc: &'a PerfEventDesc,
+    time: u64,
+    cpu: u32,
+    pid: u32,
+    tid: u32,
+    add_comma_before_first_item: bool,
+    meta_options: PerfMetaOptions,
+    convert_options: PerfConvertOptions,
+}
+
+impl<'a> fmt::Display for JsonMetaDisplay<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+        self.write_to(f)?;
+        return Ok(());
+    }
+}
+
+impl<'a> JsonMetaDisplay<'a> {
+    /// Configures whether a comma will be written before the first item, e.g.
+    /// `, "cpu": 3` (true) instead of `"cpu": 3` (false). The default value is false.
+    ///
+    /// Note that if no items are written, no comma is written regardless of this setting.
+    pub fn add_comma_before_first_item(&mut self, value: bool) -> &mut Self {
+        self.add_comma_before_first_item = value;
+        return self;
+    }
+
+    /// Configures the items that will be included in the suffix.
+    /// The default value is [`PerfMetaOptions::Default`].
+    pub fn meta_options(&mut self, value: PerfMetaOptions) -> &mut Self {
+        self.meta_options = value;
+        return self;
+    }
+
+    /// Configures the conversion options. The default value is [`PerfConvertOptions::Default`].
+    pub fn convert_options(&mut self, value: PerfConvertOptions) -> &mut Self {
+        self.convert_options = value;
+        return self;
+    }
+
+    /// Writes event metadata as a comma-separated list of 0 or more
+    /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
+    /// Returns true if any items were written, false if nothing was written.
+    pub fn write_to<W: fmt::Write + ?Sized>(&self, w: &mut W) -> Result<bool, fmt::Error> {
+        let mut json =
+            writers::JsonWriter::new(w, self.convert_options, self.add_comma_before_first_item);
+        let mut any_written = false;
+        let sample_type = self.event_desc.attr().sample_type;
+
+        if sample_type.has_flag(PerfEventAttrSampleType::Time)
+            && self.meta_options.has_flag(PerfMetaOptions::Time)
+        {
+            any_written = true;
+            json.write_property_name_json_safe("time")?;
+            if self.session_info.clock_offset_known() {
+                let time_spec = self.session_info.time_to_time_spec(self.time);
+                let dt = writers::date_time::DateTime::new(time_spec.seconds());
+                if dt.valid() {
+                    json.write_value_quoted(|w| {
+                        w.write_fmt_with_no_filter(format_args!(
+                            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:07}Z",
+                            dt.year(),
+                            dt.month_of_year(),
+                            dt.day_of_month(),
+                            dt.hour(),
+                            dt.minute(),
+                            dt.second(),
+                            time_spec.nanoseconds() / 100,
+                        ))
+                    })?;
+                } else {
+                    json.write_value_quoted(|w| {
+                        w.write_fmt_with_no_filter(format_args!(
+                            "TIME({}.{:09})",
+                            time_spec.seconds(),
+                            time_spec.nanoseconds()
+                        ))
+                    })?;
+                }
+            } else {
+                json.write_value(|w| w.write_float64(self.time as f64 / 1000000000.0))?;
+            }
+        }
+
+        if sample_type.has_flag(PerfEventAttrSampleType::Cpu)
+            && self.meta_options.has_flag(PerfMetaOptions::Cpu)
+        {
+            any_written = true;
+            json.write_property_name_json_safe("cpu")?;
+            json.write_value(|w| w.write_display_with_no_filter(self.cpu))?;
+        }
+
+        if sample_type.has_flag(PerfEventAttrSampleType::Tid) {
+            if self.meta_options.has_flag(PerfMetaOptions::Pid) {
+                any_written = true;
+                json.write_property_name_json_safe("pid")?;
+                json.write_value(|w| w.write_display_with_no_filter(self.pid))?;
+            }
+
+            if self.meta_options.has_flag(PerfMetaOptions::Tid)
+                && (self.pid != self.tid || !self.meta_options.has_flag(PerfMetaOptions::Pid))
+            {
+                any_written = true;
+                json.write_property_name_json_safe("tid")?;
+                json.write_value(|w| w.write_display_with_no_filter(self.tid))?;
+            }
+        }
+
+        if self
+            .meta_options
+            .has_flag(PerfMetaOptions::Provider.or(PerfMetaOptions::Event))
+        {
+            let provider;
+            let event;
+            let desc_name = self.event_desc.name();
+            match self.event_desc.format() {
+                Some(format) if desc_name.is_empty() => {
+                    provider = format.system_name();
+                    event = format.name();
+                }
+                _ => {
+                    let mut parts = desc_name.split(':');
+                    provider = parts.next().unwrap_or("");
+                    event = parts.next().unwrap_or("");
+                }
+            }
+
+            if self.meta_options.has_flag(PerfMetaOptions::Provider) && !provider.is_empty() {
+                any_written = true;
+                json.write_property_name_json_safe("provider")?;
+                json.write_value_quoted(|w| w.write_str_with_json_escape(provider))?;
+            }
+
+            if self.meta_options.has_flag(PerfMetaOptions::Event) && !event.is_empty() {
+                any_written = true;
+                json.write_property_name_json_safe("event")?;
+                json.write_value_quoted(|w| w.write_str_with_json_escape(event))?;
+            }
+        }
+
+        return Ok(any_written);
     }
 }

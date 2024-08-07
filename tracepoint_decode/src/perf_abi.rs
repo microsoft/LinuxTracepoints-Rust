@@ -1359,7 +1359,7 @@ impl From<PerfEventHeaderMisc> for u16 {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PerfEventHeader {
     /// perf_event_header::type: Type of event.
-    pub header_type: PerfEventHeaderType,
+    pub ty: PerfEventHeaderType,
 
     /// perf_event_header::misc:
     ///
@@ -1376,7 +1376,7 @@ impl PerfEventHeader {
     /// Returns a header with all fields set to zero.
     pub const fn new() -> Self {
         Self {
-            header_type: PerfEventHeaderType::None,
+            ty: PerfEventHeaderType::None,
             misc: PerfEventHeaderMisc(0),
             size: 0,
         }
@@ -1401,7 +1401,7 @@ impl PerfEventHeader {
 
     /// Return a copy of this struct with all fields byte-reversed.
     pub const fn byte_swap_copy(mut self) -> Self {
-        self.header_type.0 = self.header_type.0.swap_bytes();
+        self.ty.0 = self.ty.0.swap_bytes();
         self.misc.0 = self.misc.0.swap_bytes();
         self.size = self.size.swap_bytes();
         return self;

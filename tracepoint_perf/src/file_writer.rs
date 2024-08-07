@@ -179,7 +179,7 @@ impl PerfDataFileWriter {
     /// `PERF_RECORD_ID_INDEX`, `PERF_RECORD_THREAD_MAP`, `PERF_RECORD_CPU_MAP`.
     pub fn write_finished_init(&mut self) -> io::Result<()> {
         const EVENT: PerfEventHeader = PerfEventHeader {
-            header_type: PerfEventHeaderType::FinishedInit,
+            ty: PerfEventHeaderType::FinishedInit,
             misc: PerfEventHeaderMisc(0),
             size: mem::size_of::<PerfEventHeader>() as u16,
         };
@@ -195,7 +195,7 @@ impl PerfDataFileWriter {
     /// events older than this point will be written to the file after this point.
     pub fn write_finished_round(&mut self) -> io::Result<()> {
         const EVENT: PerfEventHeader = PerfEventHeader {
-            header_type: PerfEventHeaderType::FinishedRound,
+            ty: PerfEventHeaderType::FinishedRound,
             misc: PerfEventHeaderMisc(0),
             size: mem::size_of::<PerfEventHeader>() as u16,
         };
@@ -217,7 +217,7 @@ impl PerfDataFileWriter {
 
     /// Directly sets or resets the data for the specified header.
     ///
-    /// Returns false and does nothing if the specified header index is out of range
+    /// Does nothing and returns false if the specified header index is out of range
     /// (i.e. if it is greater than 31).
     ///
     /// Note that the `PerfDataFileWriter` class has special support for the
@@ -245,7 +245,7 @@ impl PerfDataFileWriter {
     /// Use this for headers where the header value is a `perf_header_string`, e.g.
     /// `HOSTNAME`, `OSRELEASE`, `VERSION`, `ARCH`, `CPUDESC`, `CPUID`, `CMDLINE`.
     ///
-    /// Returns false if and does nothing if the specified header index is out of range
+    /// Does nothing and returns false if the specified header index is out of range
     /// (i.e. if it is greater than 31) or if `data.len() >= 0x80000000`.
     ///
     /// The provided data should be an ASCII string (not validated).
@@ -292,7 +292,7 @@ impl PerfDataFileWriter {
     pub fn set_clockid_header(&mut self, clockid: u32) {
         let header = self.inner.get_header_vec(PerfHeaderIndex::ClockId).unwrap();
         header.clear();
-        header.reserve(U64_SIZE * 1);
+        header.reserve(U64_SIZE);
         header.extend_from_slice(&(clockid as u64).to_ne_bytes());
     }
 
@@ -369,117 +369,147 @@ impl PerfDataFileWriter {
     /// `finalize_and_close()` if no explicit header data was provided via
     /// `set_header(PERF_HEADER_TRACING_DATA, ...)`.
     ///
-    /// A value of `None` indicates "keep the existing value".
+    /// These should be set based on the system where the trace data comes from:
     ///
-    /// Returns false and does nothing if any of the arguments are invalid:
+    /// - `long_size` should be `sizeof(size_t)`.
+    /// - `page_size` should be `sysconf(_SC_PAGESIZE)`.
     ///
-    /// - `long_size == 0`
-    /// - `page_size == 0`
-    /// - `kallsyms.len() >= 0x80000000`
-    /// - `printk.len() >= 0x80000000`
-    /// - `ftraces.len() >= 0x80000000`
-    ///
-    /// Notes:
-    ///
-    /// - `long_size` should be the value of `sizeof(size_t)` on the system where
-    ///   the trace data comes from. This value is required -- if it is not set,
-    ///   the `finalize_and_close` function will not synthesize a
-    ///   `PERF_HEADER_TRACING_DATA` header.
-    /// - `page_size` should be the value of `sysconf(_SC_PAGESIZE)` on the system where
-    ///   the trace data comes from. This value is required -- if it is not set,
-    ///   the `finalize_and_close` function will not synthesize a
-    ///   `PERF_HEADER_TRACING_DATA` header.
-    /// - `header_page` is optional. If not set, this will default to
-    ///   timestamp64 + commit64 + overwrite8 + data4080.
-    /// - `header_event` is optional. If not set, this will default to
-    ///   type_len:5, time_delta:27, array:32.
-    /// - The remaining arguments are optional. If not set, the corresponding
-    ///   sections will be empty.
-    pub fn set_tracing_data(
-        &mut self,
-        long_size: u8,
-        page_size: u32,
-        header_page: Option<&[u8]>,
-        header_event: Option<&[u8]>,
-        ftraces: Option<&[&[u8]]>,
-        kallsyms: Option<&[u8]>,
-        printk: Option<&[u8]>,
-        saved_cmd_line: Option<&[u8]>,
-    ) -> bool {
-        if long_size == 0 || page_size == 0 {
-            return false;
-        } else if let Some(kallsyms) = kallsyms {
-            if kallsyms.len() >= 0x80000000 {
-                return false;
-            }
-        } else if let Some(printk) = printk {
-            if printk.len() >= 0x80000000 {
-                return false;
-            }
-        } else if let Some(ftraces) = ftraces {
-            if ftraces.len() >= 0x80000000 {
-                return false;
-            }
-        }
-
+    /// If you want the `finalize_and_close` function to synthesize a
+    /// `PERF_HEADER_TRACING_DATA` header, you must call this function and provide
+    /// non-zero values for `long_size` and `page_size`. If they are not set or are
+    /// set to 0 (or if you provided your own tracing data via `set_header`), the
+    /// `finalize_and_close` function will not synthesize a
+    /// `PERF_HEADER_TRACING_DATA` for your trace.
+    pub fn set_tracing_data_required(&mut self, long_size: u8, page_size: u32) {
         self.inner.tracing_data_long_size = long_size;
         self.inner.tracing_data_page_size = page_size;
+    }
 
-        if let Some(value) = header_page {
-            self.inner.tracing_data_header_page.clear();
-            self.inner.tracing_data_header_page.extend_from_slice(value);
+    /// Configures information to be included in a synthesized
+    /// `PERF_HEADER_TRACING_DATA` header. These settings are used by
+    /// `finalize_and_close()` if no explicit header data was provided via
+    /// `set_header(PERF_HEADER_TRACING_DATA, ...)`.
+    ///
+    /// Does nothing and returns false if the provided data is longer than 2GB.
+    ///
+    /// If set to an empty slice, the `finalize_and_close` function will use a
+    /// default value: timestamp64 + commit64 + overwrite8 + data4080.
+    pub fn set_tracing_data_header_page(&mut self, data: &[u8]) -> bool {
+        if data.len() >= 0x80000000 {
+            return false;
         }
 
-        if let Some(value) = header_event {
-            self.inner.tracing_data_header_event.clear();
-            self.inner
-                .tracing_data_header_event
-                .extend_from_slice(value);
+        self.inner.tracing_data_header_page.clear();
+        self.inner.tracing_data_header_page.extend_from_slice(data);
+        return true;
+    }
+
+    /// Configures information to be included in a synthesized
+    /// `PERF_HEADER_TRACING_DATA` header. These settings are used by
+    /// `finalize_and_close()` if no explicit header data was provided via
+    /// `set_header(PERF_HEADER_TRACING_DATA, ...)`.
+    ///
+    /// Does nothing and returns false if the provided data is longer than 2GB.
+    ///
+    /// If set to an empty slice, the `finalize_and_close` function will use a
+    /// default value: type_len:5, time_delta:27, array:32.
+    pub fn set_tracing_data_header_event(&mut self, data: &[u8]) -> bool {
+        if data.len() >= 0x80000000 {
+            return false;
         }
 
-        if let Some(value) = ftraces {
-            self.inner.tracing_data_ftraces.clear();
-            self.inner.tracing_data_ftraces.reserve(value.len());
-            for ftrace in value {
-                self.inner.tracing_data_ftraces.push(ftrace.to_vec());
-            }
+        self.inner.tracing_data_header_event.clear();
+        self.inner.tracing_data_header_event.extend_from_slice(data);
+        return true;
+    }
+
+    /// Configures information to be included in a synthesized
+    /// `PERF_HEADER_TRACING_DATA` header. These settings are used by
+    /// `finalize_and_close()` if no explicit header data was provided via
+    /// `set_header(PERF_HEADER_TRACING_DATA, ...)`.
+    ///
+    /// Does nothing and returns false if the provided data is longer than 2GB.
+    pub fn set_tracing_data_kallsyms(&mut self, data: &[u8]) -> bool {
+        if data.len() >= 0x80000000 {
+            return false;
         }
 
-        if let Some(value) = kallsyms {
-            self.inner.tracing_data_kallsyms.clear();
-            self.inner.tracing_data_kallsyms.extend_from_slice(value);
+        self.inner.tracing_data_kallsyms.clear();
+        self.inner.tracing_data_kallsyms.extend_from_slice(data);
+        return true;
+    }
+
+    /// Configures information to be included in a synthesized
+    /// `PERF_HEADER_TRACING_DATA` header. These settings are used by
+    /// `finalize_and_close()` if no explicit header data was provided via
+    /// `set_header(PERF_HEADER_TRACING_DATA, ...)`.
+    ///
+    /// Does nothing and returns false if the provided data is longer than 2GB.
+    pub fn set_tracing_data_printk(&mut self, data: &[u8]) -> bool {
+        if data.len() >= 0x80000000 {
+            return false;
         }
 
-        if let Some(value) = printk {
-            self.inner.tracing_data_printk.clear();
-            self.inner.tracing_data_printk.extend_from_slice(value);
+        self.inner.tracing_data_printk.clear();
+        self.inner.tracing_data_printk.extend_from_slice(data);
+        return true;
+    }
+
+    /// Configures information to be included in a synthesized
+    /// `PERF_HEADER_TRACING_DATA` header. These settings are used by
+    /// `finalize_and_close()` if no explicit header data was provided via
+    /// `set_header(PERF_HEADER_TRACING_DATA, ...)`.
+    ///
+    /// Does nothing and returns false if the provided data is longer than 2GB.
+    pub fn set_tracing_data_saved_cmd_line(&mut self, data: &[u8]) -> bool {
+        if data.len() >= 0x80000000 {
+            return false;
         }
 
-        if let Some(value) = saved_cmd_line {
-            self.inner.tracing_data_cmd_line.clear();
-            self.inner.tracing_data_cmd_line.extend_from_slice(value);
+        self.inner.tracing_data_cmd_line.clear();
+        self.inner.tracing_data_cmd_line.extend_from_slice(data);
+        return true;
+    }
+
+    /// Configures information to be included in a synthesized
+    /// `PERF_HEADER_TRACING_DATA` header. These settings are used by
+    /// `finalize_and_close()` if no explicit header data was provided via
+    /// `set_header(PERF_HEADER_TRACING_DATA, ...)`.
+    pub fn set_tracing_data_clear_ftraces(&mut self) {
+        self.inner.tracing_data_ftraces.clear();
+    }
+
+    /// Configures information to be included in a synthesized
+    /// `PERF_HEADER_TRACING_DATA` header. These settings are used by
+    /// `finalize_and_close()` if no explicit header data was provided via
+    /// `set_header(PERF_HEADER_TRACING_DATA, ...)`.
+    ///
+    /// Does nothing and returns false if the provided data is longer than 2GB
+    /// or if the number of ftraces is greater than 2 billion.
+    pub fn set_tracing_data_add_ftrace(&mut self, ftrace: &[u8]) -> bool {
+        if ftrace.len() >= 0x80000000 || self.inner.tracing_data_ftraces.len() >= 0x80000000 {
+            return false;
         }
 
+        self.inner.tracing_data_ftraces.push(ftrace.to_vec());
         return true;
     }
 
     /// Adds `perf_event_attr` and name information for the specified event ids.
     /// Use this for events that do NOT have `tracefs` format information, i.e.
-    /// when `desc.format().is_empty()`.
+    /// when `event_desc.format().is_none()`.
     ///
     /// Does nothing and returns false if arguments are invalid:
     ///
-    /// - If `desc.name().len() >= 0x10000`
-    /// - If `desc.ids().len() >= 0xFFFFFFFF`
+    /// - If `name.len() >= 0x10000`
+    /// - If `ids.len() >= 0xFFFFFFFF`
     /// - If more than 4 billion descriptors have been added.
     ///
     /// Note that each id used in the trace should map to exactly one attr provided
     /// by `add_tracepoint_event_desc` or add_event_desc``, but this is not validated by
     /// `PerfDataFileWriter`. For example, if the same id is provided in two different
     /// calls to `add_event_desc`, the resulting file may not decode properly.
-    pub fn add_event_desc(&mut self, desc: &PerfEventDesc) -> bool {
-        let name = desc.name();
-        let ids = desc.ids();
+    pub fn add_event_desc(&mut self, ids: &[u64], attr: &PerfEventAttr, name: &str) -> bool {
         if name.len() >= NAME_MAX_SIZE
             || ids.len() >= SAMPLE_IDS_MAX_SIZE
             || self.inner.event_descs.len() >= 0xFFFFFFFF
@@ -487,7 +517,7 @@ impl PerfDataFileWriter {
             return false;
         }
 
-        self.inner.add_event_desc(name, ids, desc.attr());
+        self.inner.add_event_desc(name, ids, attr);
         return true;
     }
 
@@ -501,25 +531,28 @@ impl PerfDataFileWriter {
 
     /// Adds `perf_event_attr`, `name`, and `format` for the specified event ids.
     /// Use this for events that DO have `tracefs` format information, i.e.
-    /// when `!desc.format().is_empty()`.
+    /// when `event_desc.format().is_some()`.
+    ///
+    /// Does nothing and returns false if format has already been set for the `common_type`
+    /// indicated by format.id().
     ///
     /// Does nothing and returns false if arguments are invalid:
     ///
-    /// - If `desc.format().is_empty()`
-    /// - If `desc.name().len() >= 0x10000`
-    /// - If `desc.ids().len() >= 0xFFFFFFFF`
+    /// - If `name.len() >= 0x10000`
+    /// - If `ids.len() >= 0xFFFFFFFF`
     /// - If more than 4 billion descriptors have been added.
-    ///
-    /// Does nothing and returns false if format has already been set for the `common_type`
-    /// indicated by desc.format().id().
     ///
     /// Note that each id used in the trace should map to exactly one attr provided
     /// by `add_tracepoint_event_desc` or add_event_desc``, but this is not validated by
     /// `PerfDataFileWriter`. For example, if the same id is provided in two different
     /// calls to `add_event_desc`, the resulting file may not decode properly.
-    pub fn add_tracepoint_event_desc(&mut self, desc: &PerfEventDesc) -> bool {
-        let name = desc.name();
-        let ids = desc.ids();
+    pub fn add_tracepoint_event_desc(
+        &mut self,
+        ids: &[u64],
+        attr: &PerfEventAttr,
+        name: &str,
+        format: &sync::Arc<PerfEventFormat>,
+    ) -> bool {
         if name.len() >= NAME_MAX_SIZE
             || ids.len() >= SAMPLE_IDS_MAX_SIZE
             || self.inner.event_descs.len() >= 0xFFFFFFFF
@@ -527,19 +560,20 @@ impl PerfDataFileWriter {
             return false;
         }
 
-        let format = match desc.format_arc() {
-            Some(format) => format,
-            None => return false,
-        };
-
         match self.inner.event_format_by_common_type.entry(format.id()) {
             collections::btree_map::Entry::Occupied(_) => return false,
             collections::btree_map::Entry::Vacant(e) => {
                 e.insert(format.clone());
-                self.inner.add_event_desc(name, ids, desc.attr());
+                self.inner.add_event_desc(name, ids, attr);
                 return true;
             }
         };
+    }
+}
+
+impl Default for PerfDataFileWriter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -596,9 +630,9 @@ impl DataFileWriter {
     fn add_event_desc(&mut self, name: &str, ids: &[u64], attr: &PerfEventAttr) {
         let name_len = strlen(name.as_bytes());
         self.event_descs.push(EventDesc {
-            name: (&name[..name_len]).to_string(),
+            name: name[..name_len].to_string(),
             sample_ids: ids.to_vec(),
-            attr: attr.clone(),
+            attr: *attr,
         });
     }
 
@@ -660,7 +694,7 @@ impl DataFileWriter {
         for value in self.event_format_by_common_type.values() {
             formats_by_system
                 .entry(value.system_name())
-                .or_insert(Vec::new())
+                .or_default()
                 .push(value);
         }
 
@@ -669,9 +703,10 @@ impl DataFileWriter {
 
         // Systems
         let mut format_str = string::String::new();
+        let mut scratch = vec::Vec::new();
         for (system_name, formats) in formats_by_system {
             // SystemName
-            append_string_z(header, system_name.as_bytes());
+            append_string_z(header, as_latin1(&mut scratch, system_name));
 
             // EventCount
             append_value::<u32>(header, &(formats.len() as u32));
@@ -680,7 +715,7 @@ impl DataFileWriter {
             for format in formats {
                 format_str.clear();
                 format.write_to(&mut format_str).unwrap();
-                append_section64(header, format_str.as_bytes());
+                append_section64(header, as_latin1(&mut scratch, &format_str));
             }
         }
 
@@ -711,11 +746,12 @@ impl DataFileWriter {
 
         debug_assert!(self.event_descs.len() <= 0xFFFFFFFF);
         let nr = self.event_descs.len() as u32;
+        let mut scratch = vec::Vec::new();
 
         append_value::<u32>(header, &nr); // nr
         append_value::<u32>(header, &(mem::size_of::<PerfEventAttr>() as u32)); // attr_size
         for desc in &self.event_descs {
-            let name = desc.name.as_bytes();
+            let name = as_latin1(&mut scratch, &desc.name);
 
             debug_assert!(desc.name.len() <= NAME_MAX_SIZE);
             let name_size = desc.name.len();
@@ -727,7 +763,7 @@ impl DataFileWriter {
             append_value::<PerfEventAttr>(header, &desc.attr); // attr
             append_value::<u32>(header, &nr_ids); // nr_ids
             append_value::<u32>(header, &((name_size + name_pad) as u32)); // event_string.len
-            header.extend_from_slice(&name[..name_size as usize]); // event_string.string
+            header.extend_from_slice(&name[..name_size]); // event_string.string
             header.resize(header.len() + name_pad, 0); // NUL + pad to x8
             header.extend_from_slice(unsafe {
                 slice::from_raw_parts(
@@ -874,4 +910,45 @@ fn append_named_section64(
 
 fn strlen(value: &[u8]) -> usize {
     return value.iter().position(|&c| c == 0).unwrap_or(value.len());
+}
+
+// TODO: is the encoding of strings in perf files specified anywhere?
+// Used for: system_name, format_file_contents, event_desc name.
+fn as_latin1<'a>(scratch: &'a mut vec::Vec<u8>, value: &'a str) -> &'a [u8] {
+    for c in value.bytes() {
+        if c > 0x7F {
+            scratch.clear();
+            scratch.reserve(value.len());
+            scratch.extend(
+                value
+                    .chars()
+                    .map(|c| if c > (0xFF as char) { b'?' } else { c as u8 }),
+            );
+            return scratch;
+        }
+    }
+
+    return value.as_bytes();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_as_latin1() {
+        let mut scratch = vec::Vec::new();
+
+        // Test with ASCII characters
+        let input = "Hello, World!";
+        let expected_output = input.as_bytes();
+        let result = as_latin1(&mut scratch, input);
+        assert_eq!(result, expected_output);
+
+        // Test with non-ASCII characters
+        let input = "Hello \u{00FF} \u{0100} \u{0102}!";
+        let expected_output = b"Hello \xff ? ?!";
+        let result = as_latin1(&mut scratch, input);
+        assert_eq!(result, expected_output);
+    }
 }

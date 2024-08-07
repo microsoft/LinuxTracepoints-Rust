@@ -21,9 +21,6 @@ macro_rules! debug_eprintln {
 /// Values for the DecodingStyle property of PerfEventFormat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PerfEventDecodingStyle {
-    /// Decoding information not available.
-    None,
-
     /// Event should be decoded using tracefs "format" file.
     TraceEventFormat,
 
@@ -46,23 +43,7 @@ pub struct PerfEventFormat {
     decoding_style: PerfEventDecodingStyle,
 }
 
-pub(crate) static EMPTY: PerfEventFormat = PerfEventFormat::new();
-
 impl PerfEventFormat {
-    /// Returns a new `PerfEventFormat` with no format information.
-    pub const fn new() -> Self {
-        Self {
-            system_name: string::String::new(),
-            name: string::String::new(),
-            print_fmt: string::String::new(),
-            fields: vec::Vec::new(),
-            id: 0,
-            common_field_count: 0,
-            common_fields_size: 0,
-            decoding_style: PerfEventDecodingStyle::None,
-        }
-    }
-
     /// Parses an event's "format" file and sets the fields of this object based
     /// on the results.
     ///
@@ -81,7 +62,11 @@ impl PerfEventFormat {
     ///
     /// If "ID:" is a valid unsigned and and "name:" is not empty, returns
     /// a usable value. Otherwise, returns an `EMPTY` value.
-    pub fn parse(long_is_64_bits: bool, system_name: &str, format_file_contents: &str) -> Self {
+    pub fn parse(
+        long_is_64_bits: bool,
+        system_name: &str,
+        format_file_contents: &str,
+    ) -> Option<Self> {
         let mut name = "";
         let mut print_fmt = "";
         let mut fields = vec::Vec::new();
@@ -223,7 +208,7 @@ impl PerfEventFormat {
                     PerfEventDecodingStyle::TraceEventFormat
                 };
 
-                return Self {
+                return Some(Self {
                     system_name: string::String::from(system_name),
                     name: string::String::from(name),
                     print_fmt: string::String::from(print_fmt),
@@ -232,18 +217,12 @@ impl PerfEventFormat {
                     common_field_count,
                     common_fields_size,
                     decoding_style,
-                };
+                });
             }
             _ => {
-                return Self::new();
+                return None;
             }
         }
-    }
-
-    /// Returns true if this format has no decoding information,
-    /// i.e. returns `true` if the `decoding_style` is `None`.
-    pub fn is_empty(&self) -> bool {
-        self.decoding_style == PerfEventDecodingStyle::None
     }
 
     /// Returns the value of the `system_name` parameter provided to the constructor,
@@ -277,8 +256,8 @@ impl PerfEventFormat {
     /// Returns the number of "common_*" fields at the start of the event.
     /// User fields start at this index. At present, there are 4 common fields:
     /// common_type, common_flags, common_preempt_count, common_pid.
-    pub fn common_field_count(&self) -> u16 {
-        self.common_field_count
+    pub fn common_field_count(&self) -> usize {
+        self.common_field_count as usize
     }
 
     /// Returns the offset of the end of the last "common_*" field.
@@ -295,11 +274,11 @@ impl PerfEventFormat {
     /// Writes a string representation of this format to the provided string.
     /// The string representation is in the format of a tracefs "format" file.
     pub fn write_to<W: fmt::Write>(&self, s: &mut W) -> fmt::Result {
-        write!(s, "name: {}\n", self.name())?;
-        write!(s, "ID: {}\n", self.id())?;
+        writeln!(s, "name: {}", self.name())?;
+        writeln!(s, "ID: {}", self.id())?;
         s.write_str("format:\n")?;
 
-        let common_field_count = self.common_field_count() as usize;
+        let common_field_count = self.common_field_count();
         for (i, field) in self.fields().iter().enumerate() {
             write!(
                 s,
@@ -309,7 +288,7 @@ impl PerfEventFormat {
                 field.size(),
             )?;
             if let Some(signed) = field.signed() {
-                write!(s, "\tsigned:{};\n", signed as u8)?;
+                writeln!(s, "\tsigned:{};", signed as u8)?;
             } else {
                 s.write_str("\n")?;
             }
@@ -319,13 +298,7 @@ impl PerfEventFormat {
             }
         }
 
-        return write!(s, "\nprint fmt: {}\n", self.print_fmt());
-    }
-}
-
-impl Default for PerfEventFormat {
-    fn default() -> Self {
-        Self::new()
+        return writeln!(s, "\nprint fmt: {}", self.print_fmt());
     }
 }
 

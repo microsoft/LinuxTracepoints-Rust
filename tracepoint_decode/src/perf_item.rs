@@ -85,7 +85,7 @@ impl PerfConvertOptions {
     }
 
     /// Returns true if `self & flag != 0`.
-    pub const fn has(self, flag: Self) -> bool {
+    pub const fn has_flag(self, flag: Self) -> bool {
         return self.0 & flag.0 != 0;
     }
 
@@ -204,7 +204,7 @@ impl PerfMetaOptions {
     }
 
     /// Returns true if `self & flag != 0`.
-    pub const fn has(self, flag: Self) -> bool {
+    pub const fn has_flag(self, flag: Self) -> bool {
         return self.0 & flag.0 != 0;
     }
 
@@ -1110,7 +1110,7 @@ impl<'dat> PerfItemValue<'dat> {
     ) -> fmt::Result {
         debug_assert!(self.metadata.type_size != 0);
 
-        let separator = if convert_options.has(PerfConvertOptions::Space) {
+        let separator = if convert_options.has_flag(PerfConvertOptions::Space) {
             ", "
         } else {
             ","

@@ -22,7 +22,7 @@ fn char_from_u32(ch32: u32) -> char {
 }
 
 #[cfg(windows)]
-mod date_time {
+pub mod date_time {
     #[repr(C)]
     pub struct DateTime {
         year: u16,
@@ -93,7 +93,7 @@ mod date_time {
 }
 
 #[cfg(unix)]
-mod date_time {
+pub mod date_time {
     pub struct DateTime {
         tm: libc::tm,
     }
@@ -142,7 +142,7 @@ mod date_time {
 }
 
 #[cfg(not(any(windows, unix)))]
-mod date_time {
+pub mod date_time {
     pub struct DateTime {}
 
     impl DateTime {
@@ -195,7 +195,7 @@ impl<'wri, W: fmt::Write + ?Sized> JsonWriter<'wri, W> {
             dest: WriteFilter::new(writer),
             options,
             json_comma,
-            json_space: json_comma && options.has(PerfConvertOptions::Space),
+            json_space: json_comma && options.has_flag(PerfConvertOptions::Space),
         });
     }
 
@@ -265,7 +265,7 @@ impl<'wri, W: fmt::Write + ?Sized> JsonWriter<'wri, W> {
 
         self.0.dest.write_ascii(b'"')?;
         self.0.write_utf8_with_json_escape(item_info.name_bytes())?;
-        if self.0.options.has(PerfConvertOptions::FieldTag) {
+        if self.0.options.has_flag(PerfConvertOptions::FieldTag) {
             let tag = item_info.metadata().field_tag();
             if tag != 0 {
                 write!(self.0.dest, ";tag=0x{:X}", tag)?;
@@ -337,7 +337,7 @@ impl<'wri, W: fmt::Write + ?Sized> JsonWriter<'wri, W> {
     /// Updates `json_space`. Does NOT update `json_comma`.
     fn write_raw_comma_space(&mut self) -> fmt::Result {
         let need_space = self.0.json_space;
-        self.0.json_space = self.0.options.has(PerfConvertOptions::Space);
+        self.0.json_space = self.0.options.has_flag(PerfConvertOptions::Space);
         return if need_space {
             if self.0.json_comma {
                 self.0.dest.write_str(", ")
@@ -768,9 +768,9 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     /// Writes e.g. `01 1f f0`.
     pub fn write_hexbytes(&mut self, bytes: &[u8]) -> fmt::Result {
         if !bytes.is_empty() {
-            write!(self.dest, "{:02x}", bytes[0])?;
+            write!(self.dest, "{:02X}", bytes[0])?;
             for b in bytes.iter().skip(1) {
-                write!(self.dest, " {:02x}", b)?;
+                write!(self.dest, " {:02X}", b)?;
             }
         }
         return Ok(());
@@ -822,7 +822,7 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     /// Writes hex string or decimal, respecting [`PerfConvertOptions::IntHexAsString`],
     /// e.g. `"0xFF"` or `255`.
     pub fn write_json_hex32(&mut self, value: u32) -> fmt::Result {
-        let result = if self.options.has(PerfConvertOptions::IntHexAsString) {
+        let result = if self.options.has_flag(PerfConvertOptions::IntHexAsString) {
             write!(self.dest, "\"0x{:X}\"", value)
         } else {
             write!(self.dest, "{}", value)
@@ -833,7 +833,7 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     /// Writes hex string or decimal, respecting [`PerfConvertOptions::IntHexAsString`],
     /// e.g. `"0xFF"` or `255`.
     pub fn write_json_hex64(&mut self, value: u64) -> fmt::Result {
-        let result = if self.options.has(PerfConvertOptions::IntHexAsString) {
+        let result = if self.options.has_flag(PerfConvertOptions::IntHexAsString) {
             write!(self.dest, "\"0x{:X}\"", value)
         } else {
             write!(self.dest, "{}", value)
@@ -850,7 +850,10 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
             0 => self.dest.write_str("false"),
             1 => self.dest.write_str("true"),
             _ => {
-                if self.options.has(PerfConvertOptions::BoolOutOfRangeAsString) {
+                if self
+                    .options
+                    .has_flag(PerfConvertOptions::BoolOutOfRangeAsString)
+                {
                     write!(self.dest, "BOOL({})", value as i32)
                 } else {
                     write!(self.dest, "{}", value as i32)
@@ -869,7 +872,10 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
             0 => self.dest.write_str("false"),
             1 => self.dest.write_str("true"),
             _ => {
-                if self.options.has(PerfConvertOptions::BoolOutOfRangeAsString) {
+                if self
+                    .options
+                    .has_flag(PerfConvertOptions::BoolOutOfRangeAsString)
+                {
                     write!(self.dest, "\"BOOL({})\"", value as i32)
                 } else {
                     write!(self.dest, "{}", value as i32)
@@ -884,7 +890,10 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     pub fn write_errno(&mut self, value: u32) -> fmt::Result {
         let result = if value < Self::ERRNO_STRINGS.len() as u32 {
             self.dest.write_str(Self::ERRNO_STRINGS[value as usize])
-        } else if self.options.has(PerfConvertOptions::ErrnoUnknownAsString) {
+        } else if self
+            .options
+            .has_flag(PerfConvertOptions::ErrnoUnknownAsString)
+        {
             write!(self.dest, "ERRNO({})", value as i32)
         } else {
             write!(self.dest, "{}", value as i32)
@@ -897,10 +906,16 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     /// e.g. `"ENOENT(2)"`, `"ERRNO(-12)"`, or `-12`.
     pub fn write_json_errno(&mut self, value: u32) -> fmt::Result {
         if value < Self::ERRNO_STRINGS.len() as u32 {
-            if self.options.has(PerfConvertOptions::ErrnoKnownAsString) {
+            if self
+                .options
+                .has_flag(PerfConvertOptions::ErrnoKnownAsString)
+            {
                 return write!(self.dest, "\"{}\"", Self::ERRNO_STRINGS[value as usize]);
             }
-        } else if self.options.has(PerfConvertOptions::ErrnoUnknownAsString) {
+        } else if self
+            .options
+            .has_flag(PerfConvertOptions::ErrnoUnknownAsString)
+        {
             return write!(self.dest, "\"ERRNO({})\"", value as i32);
         }
 
@@ -914,7 +929,7 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
         if dt.valid() {
             return write!(
                 self.dest,
-                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
                 dt.year(),
                 dt.month_of_year(),
                 dt.day_of_month(),
@@ -924,7 +939,7 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
             );
         } else if self
             .options
-            .has(PerfConvertOptions::UnixTimeOutOfRangeAsString)
+            .has_flag(PerfConvertOptions::UnixTimeOutOfRangeAsString)
         {
             return write!(self.dest, "TIME({})", value);
         }
@@ -940,11 +955,11 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
         if dt.valid() {
             if self
                 .options
-                .has(PerfConvertOptions::UnixTimeWithinRangeAsString)
+                .has_flag(PerfConvertOptions::UnixTimeWithinRangeAsString)
             {
                 return write!(
                     self.dest,
-                    "\"{:04}-{:02}-{:02}T{:02}:{:02}:{:02}\"",
+                    "\"{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z\"",
                     dt.year(),
                     dt.month_of_year(),
                     dt.day_of_month(),
@@ -955,7 +970,7 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
             }
         } else if self
             .options
-            .has(PerfConvertOptions::UnixTimeOutOfRangeAsString)
+            .has_flag(PerfConvertOptions::UnixTimeOutOfRangeAsString)
         {
             return write!(self.dest, "\"TIME({})\"", value);
         }
@@ -967,7 +982,10 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     pub fn write_float32(&mut self, value: f32) -> fmt::Result {
         let value_pos = if value >= 0.0 { value } else { -value };
         let e = value_pos >= 1.0e+9 || (value_pos != 0.0 && value_pos < 1.0e-4);
-        let result = if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
+        let result = if self
+            .options
+            .has_flag(PerfConvertOptions::FloatExtraPrecision)
+        {
             if e {
                 write!(self.dest, "{:.9e}", value)
             } else {
@@ -985,7 +1003,10 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     pub fn write_float64(&mut self, value: f64) -> fmt::Result {
         let value_pos = if value >= 0.0 { value } else { -value };
         let e = value_pos >= 1.0e+17 || (value_pos != 0.0 && value_pos < 1.0e-4);
-        let result = if self.options.has(PerfConvertOptions::FloatExtraPrecision) {
+        let result = if self
+            .options
+            .has_flag(PerfConvertOptions::FloatExtraPrecision)
+        {
             if e {
                 write!(self.dest, "{:.17e}", value)
             } else {
@@ -1004,7 +1025,10 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     pub fn write_json_float32(&mut self, value: f32) -> fmt::Result {
         let result = if value.is_finite() {
             self.write_float32(value)
-        } else if self.options.has(PerfConvertOptions::FloatNonFiniteAsString) {
+        } else if self
+            .options
+            .has_flag(PerfConvertOptions::FloatNonFiniteAsString)
+        {
             write!(self.dest, "\"{}\"", value)
         } else {
             self.dest.write_str("null")
@@ -1017,7 +1041,10 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
     pub fn write_json_float64(&mut self, value: f64) -> fmt::Result {
         let result = if value.is_finite() {
             self.write_float64(value)
-        } else if self.options.has(PerfConvertOptions::FloatNonFiniteAsString) {
+        } else if self
+            .options
+            .has_flag(PerfConvertOptions::FloatNonFiniteAsString)
+        {
             write!(self.dest, "\"{}\"", value)
         } else {
             self.dest.write_str("null")
