@@ -118,8 +118,6 @@ fn main() -> process::ExitCode {
                         // Decode using EventHeader metadata.
 
                         // event_info has a bunch of information about the event.
-                        // We won't use it in this example, since we get the same information in JSON
-                        // format from AppendJsonEventMetaTo.
                         let eh_event_info = enumerator.event_info();
 
                         // Add the EventHeader-specific info.
@@ -146,7 +144,7 @@ fn main() -> process::ExitCode {
                             // fixed-size elements. For complex values such as structs or arrays of variable-size
                             // elements, you need to use the enumerator to access the sub-items. In this example,
                             // we use the enumerator to convert the current item to a JSON-formatted string.
-                            // In the case of a simple item, it will be the same as item_info.value.append_json_scalar_to().
+                            // In the case of a simple item, it will be the same as `item_info.value().write_json_scalar_to()`.
                             // In the case of a complex item, it will recursively format the item and its sub-items.
                             json_buf.clear();
                             _ = enumerator.write_item_and_move_next_sibling(

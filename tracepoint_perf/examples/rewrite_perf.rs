@@ -90,30 +90,30 @@ fn main() -> process::ExitCode {
             let event = input.current_event();
             match event.header.ty {
                 td::PerfEventHeaderType::HeaderAttr => {
-                    // Pseudo-event, conflicts with AddEventDesc.
+                    // Pseudo-event, conflicts with add_event_desc.
                     // PerfDataFileReader automatically merges data from this event into its own
-                    // EventDesc table. We'll use AddEventDesc to generate the output file's
+                    // EventDesc table. We'll use add_event_desc to generate the output file's
                     // attr headers based on the merged EventDesc table.
                     continue;
                 }
                 td::PerfEventHeaderType::HeaderEventType => {
-                    // Pseudo-event, conflicts with AddEventDesc.
+                    // Pseudo-event, conflicts with add_event_desc.
                     // PerfDataFileReader could automatically merge data from this event into its
                     // own EventDesc table, but that is not implemented because this event
                     // type is deprecated. Instead, we'll just ignore this event type.
                     continue;
                 }
                 td::PerfEventHeaderType::HeaderTracingData => {
-                    // Pseudo-event, conflicts with SetTracingData.
+                    // Pseudo-event, conflicts with add_tracepoint_event_desc.
                     // PerfDataFileReader automatically merges data from this event into its own
                     // TracingData table. We'll use SetTracingData to generate the output file's
                     // tracing data based on the merged TracingData table.
                     continue;
                 }
                 td::PerfEventHeaderType::HeaderBuildId | td::PerfEventHeaderType::HeaderFeature => {
-                    // Pseudo-events, conflict with SetHeader.
+                    // Pseudo-events, conflict with set_header.
                     // PerfDataFileReader automatically merges data from these events into its own
-                    // header table. We'll use SetHeader to generate the output file's headers
+                    // header table. We'll use set_header to generate the output file's headers
                     // based on the merged header table.
                     continue;
                 }
@@ -166,9 +166,9 @@ fn main() -> process::ExitCode {
         }
 
         // Populate the output file's EventDesc table from the input file's table.
-        // Some of this was already done by AddTracepointEventDesc.
+        // Some of this was already done by add_tracepoint_event_desc.
         // In addition, the input file's table usually has duplicate entries - one entry with
-        // names and one entry without names. Therefore, MergeEventDesc will skip ids that are
+        // names and one entry without names. Therefore, merge_event_desc will skip ids that are
         // already populated, and we merge all descriptors with names before merging any
         // descriptors that don't have names.
 
@@ -189,7 +189,8 @@ fn main() -> process::ExitCode {
         for i in tp::PerfHeaderIndex::FirstFeature.0..tp::PerfHeaderIndex::LastFeature.0 {
             match tp::PerfHeaderIndex(i) {
                 tp::PerfHeaderIndex::TracingData | tp::PerfHeaderIndex::EventDesc => {
-                    // Let the output file auto-populate these based on AddEventDesc and AddTracingData.
+                    // Let the output file auto-populate these based on add_event_desc and
+                    // add_tracepoint_event_desc.
                     continue;
                 }
                 index => {

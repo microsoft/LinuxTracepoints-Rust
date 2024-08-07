@@ -36,6 +36,7 @@ const SAMPLE_IDS_MAX_SIZE: usize = 0xFFFFFFFF;
 ///     with `tracefs` format information.
 ///   - Call `add_event_desc` to provide event information for events that don't
 ///     have `tracefs` format information.
+///   - Call `set_tracing_data...` methods to provide additional tracefs data.
 ///   - Call `set_header` to provide data for other headers in the file.
 /// - Close the file: `writer.finalize_and_close();`
 ///   - This writes the file footers, finalizes the headers, then closes the file.

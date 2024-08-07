@@ -285,6 +285,8 @@ impl PerfDataFileReader {
     /// present, this function may return an error or it may succeed but return
     /// incorrect information. In general, only use this on events where
     /// `event_bytes.header.header_type == PERF_RECORD_SAMPLE`.
+    ///
+    /// `event_bytes` is the event to decode, usually returned from a call to [`Self::current_event`].
     pub fn get_sample_event_info<'slf, 'dat>(
         &'slf self,
         event_bytes: &PerfEventBytes<'dat>,
@@ -520,7 +522,7 @@ impl PerfDataFileReader {
     /// - Only use this on events that come after the `PERF_RECORD_FINISHED_INIT`
     ///   event.
     ///
-    /// `event_bytes` is the event to decode, usually returned from a call to `ReadEvent`.
+    /// `event_bytes` is the event to decode, usually returned from a call to [`Self::current_event`].
     pub fn get_non_sample_event_info<'slf, 'dat>(
         &'slf self,
         event_bytes: &PerfEventBytes<'dat>,
