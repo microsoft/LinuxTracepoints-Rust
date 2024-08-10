@@ -10,6 +10,10 @@ use alloc::string;
 use crate::*;
 use eventheader_types::*;
 
+/// This macro is used in certain edge cases that I don't expect to happen in normal
+/// `format` files. The code treats these as errors. The macro provides an easy way
+/// to make an instrumented build that reports these cases.
+///
 /// At present, does nothing.
 macro_rules! debug_eprintln {
     ($($arg:tt)*) => {};

@@ -249,6 +249,8 @@ impl PerfDataFileReader {
         } else {
             let range = self.current.range.start as usize..self.current.range.end as usize;
             let bytes = &self.inner.buffers[self.current.buffer_index as usize][range];
+
+            // SAFETY: PerfEventHeader is a repr(C) struct, size is PERF_EVENT_HEADER_SIZE.
             let mut header = unsafe {
                 mem::transmute_copy::<[u8; PERF_EVENT_HEADER_SIZE], PerfEventHeader>(
                     bytes[..PERF_EVENT_HEADER_SIZE].try_into().unwrap(),
@@ -975,8 +977,12 @@ impl DataFileReader {
             }
         }
         let event_header = {
-            let mut header: PerfEventHeader =
-                unsafe { mem::transmute_copy(&event_header_file_endian) };
+            // SAFETY: PerfEventHeader is a repr(C) struct, size is PERF_EVENT_HEADER_SIZE.
+            let mut header: PerfEventHeader = unsafe {
+                mem::transmute_copy::<[u8; PERF_EVENT_HEADER_SIZE], PerfEventHeader>(
+                    &event_header_file_endian,
+                )
+            };
             if byte_reader.byte_swap_needed() {
                 header.byte_swap();
             }
@@ -1475,7 +1481,7 @@ impl DataFileReader {
             return;
         }
 
-        // SAFETY: Extracting data from a byte array.
+        // SAFETY: ClockData is a repr(C) struct, size is CLOCK_DATA_SIZE.
         let mut clock_data = unsafe {
             mem::transmute_copy::<[u8; CLOCK_DATA_SIZE], ClockData>(
                 data[..CLOCK_DATA_SIZE].try_into().unwrap(),
@@ -1707,7 +1713,7 @@ impl ReaderAttrs {
 
         let mut attr = PerfEventAttr::default();
 
-        // SAFETY: Extracting data from a byte array.
+        // SAFETY: PerfEventAttr is a repr(C) struct, size is PERF_EVENT_ATTR_SIZE.
         let attr_as_array = unsafe {
             mem::transmute::<&mut PerfEventAttr, &mut [u8; PERF_EVENT_ATTR_SIZE]>(&mut attr)
         };

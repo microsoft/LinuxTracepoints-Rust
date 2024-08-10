@@ -172,17 +172,31 @@ fn main() -> process::ExitCode {
         // already populated, and we merge all descriptors with names before merging any
         // descriptors that don't have names.
 
+        let mut merge_event_scratch_buffer = vec::Vec::new();
+
         // Prefer data from descriptors that have names.
         for desc in input.event_desc_list() {
             if !desc.name().is_empty() {
-                merge_event_desc(&mut output, &output_path, &mut sample_ids_used, desc);
+                merge_event_desc(
+                    &mut merge_event_scratch_buffer,
+                    &mut output,
+                    &output_path,
+                    &mut sample_ids_used,
+                    desc,
+                );
             }
         }
 
         // Fill gaps (if any) using descriptors that don't have names.
         for desc in input.event_desc_list() {
             if desc.name().is_empty() {
-                merge_event_desc(&mut output, &output_path, &mut sample_ids_used, desc);
+                merge_event_desc(
+                    &mut merge_event_scratch_buffer,
+                    &mut output,
+                    &output_path,
+                    &mut sample_ids_used,
+                    desc,
+                );
             }
         }
 
@@ -236,21 +250,22 @@ fn main() -> process::ExitCode {
 }
 
 fn merge_event_desc(
+    merge_event_scratch_buffer: &mut vec::Vec<u64>,
     output: &mut tp::PerfDataFileWriter,
     output_path: &str,
     sample_ids_used: &mut collections::HashSet<u64>,
     desc: &td::PerfEventDesc,
 ) {
     let ids = desc.ids();
-    let mut sample_ids_buffer = vec::Vec::with_capacity(ids.len());
+    merge_event_scratch_buffer.clear();
     for id in ids {
         if sample_ids_used.insert(*id) {
-            sample_ids_buffer.push(*id);
+            merge_event_scratch_buffer.push(*id);
         }
     }
 
-    if !sample_ids_buffer.is_empty()
-        && !output.add_event_desc(&sample_ids_buffer, desc.attr(), desc.name())
+    if !merge_event_scratch_buffer.is_empty()
+        && !output.add_event_desc(&merge_event_scratch_buffer, desc.attr(), desc.name())
     {
         write_warning_message(
             output_path,

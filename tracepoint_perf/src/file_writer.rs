@@ -766,6 +766,8 @@ impl DataFileWriter {
             append_value::<u32>(header, &((name_size + name_pad) as u32)); // event_string.len
             header.extend_from_slice(&name[..name_size]); // event_string.string
             header.resize(header.len() + name_pad, 0); // NUL + pad to x8
+
+            // SAFETY: Conversion from &[u64] len=N to &[u8] len=8*N.
             header.extend_from_slice(unsafe {
                 slice::from_raw_parts(
                     desc.sample_ids.as_ptr() as *const u8,
@@ -839,6 +841,7 @@ impl DataFileWriter {
         }
 
         for desc in &self.event_descs {
+            // SAFETY: Conversion from &[u64] len=N to &[u8] len=8*N.
             file.write_all(unsafe {
                 slice::from_raw_parts(
                     desc.sample_ids.as_ptr() as *const u8,
@@ -867,6 +870,7 @@ fn append_value<T>(buf: &mut vec::Vec<u8>, value: &T)
 where
     T: Copy, // Proxy for "T is a plain-old-data struct"
 {
+    // SAFETY: Conversion from &T to &[u8] of length size_of::<T>().
     buf.extend_from_slice(unsafe {
         slice::from_raw_parts(value as *const T as *const u8, mem::size_of::<T>())
     });

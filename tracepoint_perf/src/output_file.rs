@@ -61,10 +61,11 @@ impl OutputFile {
         return Ok(written);
     }
 
-    pub fn write_struct<T>(&mut self, value: &T) -> io::Result<()>
+    pub(crate) fn write_struct<T>(&mut self, value: &T) -> io::Result<()>
     where
         T: Copy, // Proxy for "T is a plain-old-data struct"
     {
+        // SAFETY: Reading from the underlying bytes of T.
         return self.write_all(unsafe {
             slice::from_raw_parts(value as *const T as *const u8, mem::size_of::<T>())
         });
