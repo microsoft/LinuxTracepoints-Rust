@@ -208,7 +208,7 @@ impl<'inf> JsonMetaDisplay<'inf> {
 
     /// Writes event metadata as a comma-separated list of 0 or more
     /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
-    /// Retruns true if any items were written, false if nothing was written.
+    /// Returns true if any items were written, false if nothing was written.
     pub fn write_to<W: fmt::Write + ?Sized>(&self, w: &mut W) -> Result<bool, fmt::Error> {
         let mut json =
             writers::JsonWriter::new(w, self.convert_options, self.add_comma_before_first_item);
@@ -217,7 +217,7 @@ impl<'inf> JsonMetaDisplay<'inf> {
         let tracepoint_name = self.event_info.tracepoint_name;
         let provider_name_end = if self
             .meta_options
-            .has(PerfMetaOptions::Provider.or(PerfMetaOptions::Options))
+            .has_flag(PerfMetaOptions::Provider.or(PerfMetaOptions::Options))
         {
             // Unwrap: Shouldn't be possible to get an EventHeaderEventInfo with an invalid tracepoint name.
             tracepoint_name.rfind('_').unwrap()
@@ -225,7 +225,7 @@ impl<'inf> JsonMetaDisplay<'inf> {
             0
         };
 
-        if self.meta_options.has(PerfMetaOptions::Provider) {
+        if self.meta_options.has_flag(PerfMetaOptions::Provider) {
             any_written = true;
             json.write_property_name_json_safe("provider")?;
             json.write_value_quoted(|w| {
@@ -233,7 +233,7 @@ impl<'inf> JsonMetaDisplay<'inf> {
             })?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::Event) {
+        if self.meta_options.has_flag(PerfMetaOptions::Event) {
             any_written = true;
             json.write_property_name_json_safe("event")?;
             json.write_value_quoted(|w| {
@@ -241,19 +241,21 @@ impl<'inf> JsonMetaDisplay<'inf> {
             })?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::Id) && self.event_info.header.id != 0 {
+        if self.meta_options.has_flag(PerfMetaOptions::Id) && self.event_info.header.id != 0 {
             any_written = true;
             json.write_property_name_json_safe("id")?;
             json.write_value(|w| w.write_display_with_no_filter(self.event_info.header.id))?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::Version) && self.event_info.header.version != 0 {
+        if self.meta_options.has_flag(PerfMetaOptions::Version)
+            && self.event_info.header.version != 0
+        {
             any_written = true;
             json.write_property_name_json_safe("version")?;
             json.write_value(|w| w.write_display_with_no_filter(self.event_info.header.version))?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::Level)
+        if self.meta_options.has_flag(PerfMetaOptions::Level)
             && self.event_info.header.level != Level::Invalid
         {
             any_written = true;
@@ -263,13 +265,13 @@ impl<'inf> JsonMetaDisplay<'inf> {
             })?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::Keyword) && self.event_info.keyword != 0 {
+        if self.meta_options.has_flag(PerfMetaOptions::Keyword) && self.event_info.keyword != 0 {
             any_written = true;
             json.write_property_name_json_safe("keyword")?;
             json.write_value(|w| w.write_json_hex64(self.event_info.keyword))?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::Opcode)
+        if self.meta_options.has_flag(PerfMetaOptions::Opcode)
             && self.event_info.header.opcode != Opcode::Info
         {
             any_written = true;
@@ -279,13 +281,14 @@ impl<'inf> JsonMetaDisplay<'inf> {
             })?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::Tag) && self.event_info.header.tag != 0 {
+        if self.meta_options.has_flag(PerfMetaOptions::Tag) && self.event_info.header.tag != 0 {
             any_written = true;
             json.write_property_name_json_safe("tag")?;
             json.write_value(|w| w.write_json_hex32(self.event_info.header.tag as u32))?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::Activity) && self.event_info.activity_id_len >= 16
+        if self.meta_options.has_flag(PerfMetaOptions::Activity)
+            && self.event_info.activity_id_len >= 16
         {
             any_written = true;
             json.write_property_name_json_safe("activity")?;
@@ -299,7 +302,7 @@ impl<'inf> JsonMetaDisplay<'inf> {
             })?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::RelatedActivity)
+        if self.meta_options.has_flag(PerfMetaOptions::RelatedActivity)
             && self.event_info.activity_id_len >= 32
         {
             any_written = true;
@@ -314,7 +317,7 @@ impl<'inf> JsonMetaDisplay<'inf> {
             })?;
         }
 
-        if self.meta_options.has(PerfMetaOptions::Options) {
+        if self.meta_options.has_flag(PerfMetaOptions::Options) {
             let name_bytes = tracepoint_name.as_bytes();
             let mut pos = provider_name_end;
             while pos < name_bytes.len() {
@@ -331,7 +334,7 @@ impl<'inf> JsonMetaDisplay<'inf> {
             }
         }
 
-        if self.meta_options.has(PerfMetaOptions::Flags) {
+        if self.meta_options.has_flag(PerfMetaOptions::Flags) {
             any_written = true;
             json.write_property_name_json_safe("flags")?;
             json.write_value(|w| w.write_json_hex32(self.event_info.header.flags.as_int() as u32))?;
@@ -1577,7 +1580,7 @@ impl EventHeaderEnumeratorContext {
     ) -> Result<bool, fmt::Error> {
         debug_assert!(self.state.can_move_next());
 
-        let mut want_name = convert_options.has(PerfConvertOptions::RootName);
+        let mut want_name = convert_options.has_flag(PerfConvertOptions::RootName);
         let mut json =
             writers::JsonWriter::new(writer, convert_options, add_comma_before_first_item);
         let mut depth = 0i32;

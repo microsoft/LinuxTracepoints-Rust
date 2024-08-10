@@ -7,4 +7,5 @@ members = [
     "eventheader_dynamic",
     "eventheader_macros",
     "eventheader_types",
+    "tracepoint_perf",
 ]

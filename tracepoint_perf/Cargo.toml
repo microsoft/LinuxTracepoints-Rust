@@ -1,0 +1,27 @@
+[package]
+name = "tracepoint_perf"
+version = "0.4.1"
+edition = "2021"
+authors = ["Microsoft"]
+license = "MIT"
+description = "Rust API for reading and writing perf.data files"
+keywords = [
+    "user_events",
+    "eventheader",
+    "perf.data",
+    "tracepoints",
+    "trace",
+    "logging",
+]
+categories = [
+    "api-bindings",
+    "development-tools::debugging",
+    "development-tools::profiling",
+]
+repository = "https://github.com/microsoft/LinuxTracepoints-Rust"
+readme = "README.md"
+rust-version = "1.63"
+
+[dependencies]
+eventheader_types = { version = "= 0.4.1", path = "../eventheader_types" }
+tracepoint_decode = { version = "= 0.4.1", path = "../tracepoint_decode" }

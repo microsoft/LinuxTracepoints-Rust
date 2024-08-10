@@ -18,11 +18,6 @@ fn str_from_validated_utf8(valid_utf8: &[u8]) -> &str {
     return unsafe { str::from_utf8_unchecked(valid_utf8) };
 }
 
-/// If ch32 is valid, returns the char. Otherwise, returns the replacement character.
-pub fn char_from_u32(ch32: u32) -> char {
-    return char::from_u32(ch32).unwrap_or(char::REPLACEMENT_CHARACTER);
-}
-
 // **** write_latin1_to
 
 /// Writes a Latin-1-encoded string to a filter.

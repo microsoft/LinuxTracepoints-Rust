@@ -245,7 +245,8 @@ impl<'low, const CONTROL_CHARS_ONLY: bool, F: Filter> JsonFilterImpl<'low, CONTR
 
     #[inline]
     fn to_hex_char_uppercase(nibble: u8) -> u8 {
-        return match nibble & 0xF {
+        let nibble = nibble & 0xF;
+        return match nibble {
             0..=9 => b'0' + nibble,
             10..=15 => b'A' + nibble - 10,
             _ => unreachable!(),
