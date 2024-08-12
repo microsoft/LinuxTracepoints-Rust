@@ -13,6 +13,10 @@ use perf_field_format::ascii_to_u32;
 use perf_field_format::consume_string;
 use perf_field_format::is_space_or_tab;
 
+/// This macro is used in certain edge cases that I don't expect to happen in normal
+/// `format` files. The code treats these as errors. The macro provides an easy way
+/// to make an instrumented build that reports these cases.
+///
 /// At present, does nothing.
 macro_rules! debug_eprintln {
     ($($arg:tt)*) => {};

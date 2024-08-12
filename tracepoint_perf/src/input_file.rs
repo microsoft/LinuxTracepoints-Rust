@@ -70,11 +70,11 @@ impl InputFile {
         return Ok(());
     }
 
-    pub fn read_struct<T>(&mut self, value: &mut T) -> io::Result<()>
+    pub(crate) fn read_struct<T>(&mut self, value: &mut T) -> io::Result<()>
     where
         T: Copy, // Proxy for "T is a plain-old-data struct"
     {
-        // Safety: Turning struct into slice-of-byte.
+        // SAFETY: Writing sizeof(T) bytes from the file into a T.
         return self.read_exact(unsafe {
             slice::from_raw_parts_mut(value as *mut T as *mut u8, mem::size_of::<T>())
         });
@@ -90,17 +90,16 @@ impl InputFile {
         let new_len = old_len + len;
         vec.reserve(len);
 
-        unsafe {
-            // Safety: We've just reserved space for the new data, so it's safe to write into it.
-            let vec_bytes = slice::from_raw_parts_mut(vec.as_mut_ptr(), new_len);
+        // SAFETY: We've just reserved space for the new data, so it's ok to write into
+        // the reserved-but-not-yet-valid space.
+        let vec_bytes = unsafe { slice::from_raw_parts_mut(vec.as_mut_ptr(), new_len) };
 
-            let result = self.read_exact(&mut vec_bytes[old_len..]);
-            if result.is_ok() {
-                // Safety: We've read into the buffer so mark it valid.
-                vec.set_len(new_len);
-            }
-
-            return result;
+        let result = self.read_exact(&mut vec_bytes[old_len..]);
+        if result.is_ok() {
+            // SAFETY: We've read into the reserved-but-not-yet-valid space so it's now valid.
+            unsafe { vec.set_len(new_len) };
         }
+
+        return result;
     }
 }

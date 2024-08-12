@@ -142,13 +142,21 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     }
 
     /// Returns true if the the session's event data is formatted in big-endian
-    /// byte order. (Use `byte_reader()` to do byte-swapping as appropriate.)
+    /// byte order.
+    ///
+    /// If directly accessing the session's event data, you may want to use
+    /// `byte_reader()` to help with reading values since it will automatically
+    /// perform appropriate byte-swapping based on the data source's byte order.
     pub const fn source_big_endian(&self) -> bool {
         self.session_info.source_big_endian()
     }
 
     /// Returns a [`PerfByteReader`] configured for the byte order of the events
     /// in this session, i.e. `PerfByteReader::new(source_big_endian())`.
+    ///
+    /// If directly accessing the session's event data, you may want to use
+    /// `byte_reader()` to help with reading values since it will automatically
+    /// perform appropriate byte-swapping based on the data source's byte order.
     pub const fn byte_reader(&self) -> PerfByteReader {
         self.session_info.byte_reader()
     }
@@ -197,7 +205,7 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     ///   (assumes the clock value is in nanoseconds), or omitted if not present.
     /// - `"cpu": 3` (omitted if unavailable)
     /// - `"pid": 123` (omitted if unavailable)
-    /// - `"tid": 124` (omitted if unavailable or redundant)
+    /// - `"tid": 124` (omitted if unavailable or if pid is shown and pid == tid)
     /// - `"provider": "SystemName"` (omitted if unavailable)
     /// - `"event": "TracepointName"` (omitted if unavailable)
     pub const fn json_meta_display(&self) -> JsonMetaDisplay {
@@ -319,13 +327,21 @@ impl<'a> PerfSampleEventInfo<'a> {
     }
 
     /// Returns true if the the session's event data is formatted in big-endian
-    /// byte order. (Use `byte_reader()` to do byte-swapping as appropriate.)
+    /// byte order.
+    ///
+    /// If directly accessing the session's event data, you may want to use
+    /// `byte_reader()` to help with reading values since it will automatically
+    /// perform appropriate byte-swapping based on the data source's byte order.
     pub const fn source_big_endian(&self) -> bool {
         self.session_info.source_big_endian()
     }
 
     /// Returns a [`PerfByteReader`] configured for the byte order of the events
     /// in this session, i.e. `PerfByteReader::new(source_big_endian())`.
+    ///
+    /// If directly accessing the session's event data, you may want to use
+    /// `byte_reader()` to help with reading values since it will automatically
+    /// perform appropriate byte-swapping based on the data source's byte order.
     pub const fn byte_reader(&self) -> PerfByteReader {
         self.session_info.byte_reader()
     }
@@ -417,7 +433,7 @@ impl<'a> PerfSampleEventInfo<'a> {
     ///   (assumes the clock value is in nanoseconds), or omitted if not present.
     /// - `"cpu": 3` (omitted if unavailable)
     /// - `"pid": 123` (omitted if unavailable)
-    /// - `"tid": 124` (omitted if unavailable or redundant)
+    /// - `"tid": 124` (omitted if unavailable or if pid is shown and pid == tid)
     /// - `"provider": "SystemName"` (omitted if unavailable)
     /// - `"event": "TracepointName"` (omitted if unavailable)
     pub const fn json_meta_display(&self) -> JsonMetaDisplay {
