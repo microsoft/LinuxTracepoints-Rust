@@ -184,7 +184,7 @@ fn write_utf16_to<const BIG_ENDIAN: bool, F: filters::Filter>(
             } else {
                 pos += 2; // Consume the second code unit.
                 char_from_validated_u32(
-                    ((high as u32 - 0xD800) << 10) | (low as u32 - 0xDC00) | 0x10000,
+                    (((high as u32 - 0xD800) << 10) | (low as u32 - 0xDC00)) + 0x10000,
                 )
             };
         }
@@ -240,4 +240,176 @@ pub fn write_utf32be_to<F: filters::Filter>(bytes: &[u8], filter: &mut F) -> fmt
 /// replacement character.
 pub fn write_utf32le_to<F: filters::Filter>(bytes: &[u8], filter: &mut F) -> fmt::Result {
     return write_utf32_to::<false, F>(bytes, filter);
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate alloc;
+    use alloc::string;
+
+    use super::*;
+
+    #[test]
+    fn test_write_latin1_to() {
+        fn check(expected: &str, input: &[u8]) {
+            let mut actual = string::String::new();
+            let mut actual_writer = filters::WriteFilter::new(&mut actual);
+            write_latin1_to(input, &mut actual_writer).unwrap();
+            assert_eq!(expected, actual);
+        }
+
+        check("", b"");
+        check("A", b"A");
+        check("A\u{80}", b"A\x80");
+        check("\u{80}", b"\x80");
+        check("\u{80}A", b"\x80A");
+        check("Hello, world!", b"Hello, world!");
+        check("Hello, \u{80}world!", b"Hello, \x80world!");
+        check("Hello, \u{FF}", b"Hello, \xFF");
+    }
+
+    #[test]
+    fn test_write_utf8_with_latin1_fallback_to() {
+        fn check(expected: &str, input: &[u8]) {
+            let mut actual = string::String::new();
+            let mut actual_writer = filters::WriteFilter::new(&mut actual);
+            write_utf8_with_latin1_fallback_to(input, &mut actual_writer).unwrap();
+            assert_eq!(expected, actual);
+        }
+
+        fn check_u32(i: u32) {
+            let mut buf4 = [0u8; 4];
+
+            if let Some(ch) = char::from_u32(i) {
+                // utf-8 encoding of valid Unicode code point should pass through unchanged.
+                let s = ch.encode_utf8(&mut buf4[..]);
+                let sb = s.as_bytes();
+
+                check(s, sb);
+            } else {
+                // Invalid Unicode code points. Encode as UTF-8 anyway, then verify that
+                // it is recognized as invalid and treated as Latin-1.
+                debug_assert!(i >= 0x800); // There are no invalid code points below 0x800.
+                debug_assert!(i <= 0x1FFFFF); // Should not be called after 0x1FFFFF.
+                let len;
+                if i <= 0xFFFF {
+                    buf4[0] = (0xE0 | ((i >> 12) & 0x0F)) as u8;
+                    buf4[1] = (0x80 | ((i >> 6) & 0x3F)) as u8;
+                    buf4[2] = (0x80 | (i & 0x3F)) as u8;
+                    len = 3;
+                } else {
+                    buf4[0] = (0xF0 | ((i >> 18) & 0x07)) as u8;
+                    buf4[1] = (0x80 | ((i >> 12) & 0x3F)) as u8;
+                    buf4[2] = (0x80 | ((i >> 6) & 0x3F)) as u8;
+                    buf4[3] = (0x80 | (i & 0x3F)) as u8;
+                    len = 4;
+                }
+
+                let mut str = string::String::new();
+                for j in 0..len {
+                    str.push(char::from_u32(buf4[j] as u32).unwrap());
+                }
+                check(&str, &buf4[..len]);
+            }
+        }
+
+        // Check handling of valid and invalid code points that have been encoded into utf-8.
+        for i in 0x0..0xFFFF {
+            check_u32(i);
+        }
+        for i in (0x0..0x1F0000).step_by(0x10000) {
+            check_u32(i);
+            check_u32(i | 0xFFFF);
+        }
+
+        // Valid utf-8 should pass through unchanged.
+        let valid_strings = [
+            "",
+            "Hello, world!",
+            "\u{0}\u{7F}\u{80}\u{7FF}\u{800}\u{D7FF}\u{E000}\u{FFFF}\u{10000}\u{10FFFF}",
+        ];
+        for valid_string in valid_strings.iter() {
+            check(valid_string, valid_string.as_bytes());
+        }
+    }
+
+    #[test]
+    fn test_write_utf16_to() {
+        fn check(expected: &str, input_big_endian: &mut [u8]) {
+            let mut actual = string::String::new();
+
+            let mut actual_writer = filters::WriteFilter::new(&mut actual);
+            write_utf16_to::<true, _>(input_big_endian, &mut actual_writer).unwrap();
+            assert_eq!(expected, actual);
+
+            for i in 0..(input_big_endian.len() / 2) {
+                input_big_endian.swap(i * 2, i * 2 + 1);
+            }
+
+            actual.clear();
+            let mut actual_writer = filters::WriteFilter::new(&mut actual);
+            write_utf16_to::<false, _>(&input_big_endian, &mut actual_writer).unwrap();
+            assert_eq!(expected, actual);
+        }
+
+        // Note: input is big-endian.
+        check("", &mut []); // Empty.
+        check("", &mut [99]); // Odd length should be ignored.
+        check("0", &mut [0x00, 0x30]); // ASCII.
+        check("0", &mut [0x00, 0x30, 99]); // Odd length should be ignored.
+        check("\u{FF}", &mut [0x00, 0xFF]); // Non-ASCII.
+        check("\u{100}", &mut [0x01, 0x00]); // Non-ASCII.
+        check("\u{D7FF}", &mut [0xD7, 0xFF]); // Non-ASCII.
+        check("\u{10000}", &mut [0xD8, 0x00, 0xDC, 0x00]); // Valid surrogate pair.
+        check("\u{103FF}", &mut [0xD8, 0x00, 0xDF, 0xFF]); // Valid surrogate pair.
+        check("\u{10FC00}", &mut [0xDB, 0xFF, 0xDC, 0x00]); // Valid surrogate pair.
+        check("\u{10FFFF}", &mut [0xDB, 0xFF, 0xDF, 0xFF]); // Valid surrogate pair.
+
+        check("\u{FFFD}", &mut [0xD8, 0x00]); // Unpaired high surrogate.
+        check("\u{FFFD}0", &mut [0xDB, 0xFF, 0x00, 0x30]); // Unpaired high surrogate followed by '0'.
+        check("\u{FFFD}", &mut [0xDC, 0x00]); // Unpaired low surrogate.
+        check("\u{FFFD}0", &mut [0xDF, 0xFF, 0x00, 0x30]); // Unpaired low surrogate followed by '0'.
+    }
+
+    #[test]
+    fn test_write_utf32_to() {
+        fn check(expected: &str, input_big_endian: &mut [u8]) {
+            let mut actual = string::String::new();
+
+            let mut actual_writer = filters::WriteFilter::new(&mut actual);
+            write_utf32_to::<true, _>(input_big_endian, &mut actual_writer).unwrap();
+            assert_eq!(expected, actual);
+
+            for i in 0..(input_big_endian.len() / 4) {
+                input_big_endian.swap(i * 4, i * 4 + 3);
+                input_big_endian.swap(i * 4 + 1, i * 4 + 2);
+            }
+
+            actual.clear();
+            let mut actual_writer = filters::WriteFilter::new(&mut actual);
+            write_utf32_to::<false, _>(&input_big_endian, &mut actual_writer).unwrap();
+            assert_eq!(expected, actual);
+        }
+
+        // Note: input is big-endian.
+        check("", &mut []); // Empty.
+        check("", &mut [99]); // Odd length should be ignored.
+        check("", &mut [0, 99]); // Odd length should be ignored.
+        check("", &mut [0, 0, 99]); // Odd length should be ignored.
+        check("0", &mut [0x00, 0x00, 0x00, 0x30]); // ASCII.
+        check("0", &mut [0x00, 0x00, 0x00, 0x30, 99]); // Odd length should be ignored.
+        check("0", &mut [0x00, 0x00, 0x00, 0x30, 0, 99]); // Odd length should be ignored.
+        check("0", &mut [0x00, 0x00, 0x00, 0x30, 0, 0, 99]); // Odd length should be ignored.
+        check("\u{FF}", &mut [0x00, 0x00, 0x00, 0xFF]); // Non-ASCII.
+        check("\u{100}", &mut [0x00, 0x00, 0x01, 0x00]);
+        check("\u{D7FF}", &mut [0x00, 0x00, 0xD7, 0xFF]);
+        check("\u{10000}", &mut [0x00, 0x01, 0x00, 0x00]);
+        check("\u{10FFFF}", &mut [0x00, 0x10, 0xFF, 0xFF]); // Limit
+
+        // Invalid char handling.
+        check("\u{FFFD}", &mut [0x00, 0x11, 0x00, 0x00]);
+        check("\u{FFFD}0", &mut [0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30]);
+        check("\u{FFFD}", &mut [0x00, 0x00, 0xDC, 0x00]);
+        check("\u{FFFD}0", &mut [0x01, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, 0x30]);
+    }
 }

@@ -34,6 +34,16 @@ pub enum PerfEventDecodingStyle {
     EventHeader,
 }
 
+impl fmt::Display for PerfEventDecodingStyle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let str = match self {
+            Self::TraceEventFormat => "TraceEventFormat",
+            Self::EventHeader => "EventHeader",
+        };
+        return f.pad(str);
+    }
+}
+
 /// Event information parsed from a tracefs "format" file.
 #[derive(Debug)]
 pub struct PerfEventFormat {
@@ -270,7 +280,7 @@ impl PerfEventFormat {
         self.common_fields_size
     }
 
-    /// Returns the detected event decoding system - `None`, `TraceEventFormat` or `EventHeader`.
+    /// Returns the detected event decoding system - `TraceEventFormat` or `EventHeader`.
     pub fn decoding_style(&self) -> PerfEventDecodingStyle {
         self.decoding_style
     }

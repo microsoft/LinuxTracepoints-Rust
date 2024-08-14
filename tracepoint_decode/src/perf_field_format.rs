@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use core::fmt;
 use core::ops;
 
 use alloc::string;
@@ -47,6 +48,21 @@ pub enum PerfFieldArray {
     /// e.g. `__data_loc char val[]; size:4;`.
     /// Value contains `(dataLen << 16) | offset`.
     DataLoc4,
+}
+
+impl fmt::Display for PerfFieldArray {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let str = match self {
+            PerfFieldArray::None => "None",
+            PerfFieldArray::Fixed => "Fixed",
+            PerfFieldArray::RestOfEvent => "RestOfEvent",
+            PerfFieldArray::RelLoc2 => "RelLoc2",
+            PerfFieldArray::DataLoc2 => "DataLoc2",
+            PerfFieldArray::RelLoc4 => "RelLoc4",
+            PerfFieldArray::DataLoc4 => "DataLoc4",
+        };
+        return f.pad(str);
+    }
 }
 
 /// Stores decoding information about a field, parsed from a tracefs "format" file.
