@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 //! Demonstrates how to use [`tp::PerfDataFileReader`] to decode events from a
-//! `perf.data` file.
+//! `perf.data` file to text.
 
 use std::env;
 use std::process;
