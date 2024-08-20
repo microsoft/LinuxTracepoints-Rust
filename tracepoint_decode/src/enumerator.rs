@@ -2,21 +2,17 @@
 // Licensed under the MIT license.
 
 use core::fmt;
-use core::fmt::Write;
 use core::mem;
 use core::str;
 
 use eventheader_types::*;
 
-use crate::charconv;
-use crate::filters;
-use crate::filters::Filter;
+use crate::display;
 use crate::writers;
 use crate::PerfByteReader;
 use crate::PerfConvertOptions;
 use crate::PerfItemMetadata;
 use crate::PerfItemValue;
-use crate::PerfMetaOptions;
 
 #[derive(Clone, Copy, Debug)]
 enum SubState {
@@ -93,255 +89,6 @@ struct FieldType {
     pub encoding: FieldEncoding,
     pub format: FieldFormat,
     pub tag: u16,
-}
-
-/// Formatter for the name of an EventHeader event or field. Tries to interpret the
-/// name as UTF-8, but falls back to Latin1 if the name contains non-UTF-8 sequences.
-#[derive(Clone, Copy, Debug)]
-pub struct NameDisplay<'dat> {
-    name: &'dat [u8],
-}
-
-impl<'dat> fmt::Display for NameDisplay<'dat> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
-        return self.write_to(f);
-    }
-}
-
-impl<'dat> NameDisplay<'dat> {
-    /// Writes the name to the specified writer.
-    pub fn write_to<W: fmt::Write + ?Sized>(&self, writer: &mut W) -> fmt::Result {
-        let mut dest = filters::WriteFilter::new(writer);
-        return charconv::write_utf8_with_latin1_fallback_to(self.name, &mut dest);
-    }
-}
-
-/// Formatter for the name and tag of an EventHeader field.
-/// If the field tag is 0, writes just the field name.
-/// Otherwise, writes the field name plus a suffix like ";tag=0x1234".
-#[derive(Clone, Copy, Debug)]
-pub struct NameAndTagDisplay<'dat> {
-    name: &'dat [u8],
-    tag: u16,
-}
-
-impl<'dat> fmt::Display for NameAndTagDisplay<'dat> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
-        return self.write_to(f);
-    }
-}
-
-impl<'dat> NameAndTagDisplay<'dat> {
-    /// If the field tag is 0, writes just the field name.
-    /// Otherwise, writes the field name plus a suffix like ";tag=0x1234".
-    pub fn write_to<W: fmt::Write + ?Sized>(&self, writer: &mut W) -> fmt::Result {
-        let mut dest = filters::WriteFilter::new(writer);
-        charconv::write_utf8_with_latin1_fallback_to(self.name, &mut dest)?;
-        if self.tag != 0 {
-            return write!(dest, ";tag=0x{:X}", self.tag);
-        }
-        return Ok(());
-    }
-}
-
-/// Formatter for the identity of an EventHeader event, i.e. "ProviderName:EventName".
-#[derive(Clone, Copy, Debug)]
-pub struct IdentityDisplay<'nam, 'dat> {
-    provider_name: &'nam str,
-    name: &'dat [u8],
-}
-
-impl<'nam, 'dat> fmt::Display for IdentityDisplay<'nam, 'dat> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
-        return self.write_to(f);
-    }
-}
-
-impl<'nam, 'dat> IdentityDisplay<'nam, 'dat> {
-    /// Writes the event identity, i.e. "ProviderName:EventName"
-    pub fn write_to<W: fmt::Write + ?Sized>(&self, writer: &mut W) -> fmt::Result {
-        let mut dest = filters::WriteFilter::new(writer);
-        dest.write_str(self.provider_name)?;
-        dest.write_ascii(b':')?;
-        return charconv::write_utf8_with_latin1_fallback_to(self.name, &mut dest);
-    }
-}
-
-/// Formatter for the "meta" suffix of an EventHeader event, i.e. `"level": 5, "keyword": 3`.
-#[derive(Debug)]
-pub struct JsonMetaDisplay<'inf> {
-    event_info: &'inf EventHeaderEventInfo<'inf, 'inf>,
-    add_comma_before_first_item: bool,
-    meta_options: PerfMetaOptions,
-    convert_options: PerfConvertOptions,
-}
-
-impl<'inf> fmt::Display for JsonMetaDisplay<'inf> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
-        self.write_to(f)?;
-        return Ok(());
-    }
-}
-
-impl<'inf> JsonMetaDisplay<'inf> {
-    /// Configures whether a comma will be written before the first item, e.g.
-    /// `, "level": 5` (true) instead of `"level": 5` (false). The default value is false.
-    ///
-    /// Note that if no items are written, no comma is written regardless of this setting.
-    pub fn add_comma_before_first_item(&mut self, value: bool) -> &mut Self {
-        self.add_comma_before_first_item = value;
-        return self;
-    }
-
-    /// Configures the items that will be included in the suffix.
-    /// The default value is [`PerfMetaOptions::Default`].
-    pub fn meta_options(&mut self, value: PerfMetaOptions) -> &mut Self {
-        self.meta_options = value;
-        return self;
-    }
-
-    /// Configures the conversion options. The default value is [`PerfConvertOptions::Default`].
-    pub fn convert_options(&mut self, value: PerfConvertOptions) -> &mut Self {
-        self.convert_options = value;
-        return self;
-    }
-
-    /// Writes event metadata as a comma-separated list of 0 or more
-    /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
-    /// Returns true if any items were written, false if nothing was written.
-    pub fn write_to<W: fmt::Write + ?Sized>(&self, w: &mut W) -> Result<bool, fmt::Error> {
-        let mut json =
-            writers::JsonWriter::new(w, self.convert_options, self.add_comma_before_first_item);
-        let mut any_written = false;
-
-        let tracepoint_name = self.event_info.tracepoint_name;
-        let provider_name_end = if self
-            .meta_options
-            .has_flag(PerfMetaOptions::Provider.or(PerfMetaOptions::Options))
-        {
-            // Unwrap: Shouldn't be possible to get an EventHeaderEventInfo with an invalid tracepoint name.
-            tracepoint_name.rfind('_').unwrap()
-        } else {
-            0
-        };
-
-        if self.meta_options.has_flag(PerfMetaOptions::Provider) {
-            any_written = true;
-            json.write_property_name_json_safe("provider")?;
-            json.write_value_quoted(|w| {
-                w.write_str_with_json_escape(&tracepoint_name[..provider_name_end])
-            })?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Event) {
-            any_written = true;
-            json.write_property_name_json_safe("event")?;
-            json.write_value_quoted(|w| {
-                w.write_utf8_with_json_escape(self.event_info.name_bytes())
-            })?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Id) && self.event_info.header.id != 0 {
-            any_written = true;
-            json.write_property_name_json_safe("id")?;
-            json.write_value(|w| w.write_display_with_no_filter(self.event_info.header.id))?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Version)
-            && self.event_info.header.version != 0
-        {
-            any_written = true;
-            json.write_property_name_json_safe("version")?;
-            json.write_value(|w| w.write_display_with_no_filter(self.event_info.header.version))?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Level)
-            && self.event_info.header.level != Level::Invalid
-        {
-            any_written = true;
-            json.write_property_name_json_safe("level")?;
-            json.write_value(|w| {
-                w.write_display_with_no_filter(self.event_info.header.level.as_int())
-            })?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Keyword) && self.event_info.keyword != 0 {
-            any_written = true;
-            json.write_property_name_json_safe("keyword")?;
-            json.write_value(|w| w.write_json_hex64(self.event_info.keyword))?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Opcode)
-            && self.event_info.header.opcode != Opcode::Info
-        {
-            any_written = true;
-            json.write_property_name_json_safe("opcode")?;
-            json.write_value(|w| {
-                w.write_display_with_no_filter(self.event_info.header.opcode.as_int())
-            })?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Tag) && self.event_info.header.tag != 0 {
-            any_written = true;
-            json.write_property_name_json_safe("tag")?;
-            json.write_value(|w| w.write_json_hex32(self.event_info.header.tag as u32))?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Activity)
-            && self.event_info.activity_id_len >= 16
-        {
-            any_written = true;
-            json.write_property_name_json_safe("activity")?;
-            let start = self.event_info.activity_id_start as usize;
-            json.write_value_quoted(|w| {
-                w.write_uuid(
-                    &self.event_info.event_data[start..start + 16]
-                        .try_into()
-                        .unwrap(),
-                )
-            })?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::RelatedActivity)
-            && self.event_info.activity_id_len >= 32
-        {
-            any_written = true;
-            json.write_property_name_json_safe("relatedActivity")?;
-            let start = self.event_info.activity_id_start as usize + 16;
-            json.write_value_quoted(|w| {
-                w.write_uuid(
-                    &self.event_info.event_data[start..start + 16]
-                        .try_into()
-                        .unwrap(),
-                )
-            })?;
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Options) {
-            let name_bytes = tracepoint_name.as_bytes();
-            let mut pos = provider_name_end;
-            while pos < name_bytes.len() {
-                let ch = name_bytes[pos];
-                if ch.is_ascii_uppercase() && ch != b'L' && ch != b'K' {
-                    any_written = true;
-                    json.write_property_name_json_safe("options")?;
-                    json.write_value_quoted(|w| {
-                        w.write_str_with_no_filter(&tracepoint_name[pos..])
-                    })?;
-                    break;
-                }
-                pos += 1;
-            }
-        }
-
-        if self.meta_options.has_flag(PerfMetaOptions::Flags) {
-            any_written = true;
-            json.write_property_name_json_safe("flags")?;
-            json.write_value(|w| w.write_json_hex32(self.event_info.header.flags.as_int() as u32))?;
-        }
-
-        return Ok(any_written);
-    }
 }
 
 /// Values for the `last_error()` property of [`EventHeaderEnumerator`].
@@ -475,12 +222,16 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
         return self.event_data;
     }
 
-    /// Returns a formatter for the event's identity, i.e. "ProviderName:EventName".
-    pub fn identity_display(&self) -> IdentityDisplay<'nam, 'dat> {
-        return IdentityDisplay {
-            provider_name: self.provider_name(),
-            name: self.name_bytes(),
-        };
+    /// Returns a formatter for the event's identity, i.e. writes `ProviderName:EventName`.
+    pub fn identity_display(&self) -> display::EventHeaderIdentityDisplay<'nam, 'dat> {
+        return display::EventHeaderIdentityDisplay::new(self.provider_name(), self.name_bytes());
+    }
+
+    /// Returns a formatter for the event's identity, i.e. writes `ProviderName:EventName`.
+    /// If the output includes any control chars, quotes, or backslashes, they will be
+    /// escaped using JSON string escape rules.
+    pub fn json_identity_display(&self) -> display::EventHeaderIdentityDisplay<'nam, 'dat> {
+        return display::EventHeaderIdentityDisplay::new(self.provider_name(), self.name_bytes());
     }
 
     /// Returns a formatter for the event's "meta" suffix.
@@ -510,13 +261,8 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
     /// - `"relatedActivity": "12345678-1234-1234-1234-1234567890AB"` (omitted if not present)
     /// - `"options": "Gmygroup"` (omitted if not present, off by default)
     /// - `"flags": "0x7"` (omitted if zero, off by default)
-    pub fn json_meta_display(&self) -> JsonMetaDisplay {
-        return JsonMetaDisplay {
-            event_info: self,
-            add_comma_before_first_item: false,
-            meta_options: PerfMetaOptions::Default,
-            convert_options: PerfConvertOptions::Default,
-        };
+    pub fn json_meta_display(&self) -> display::EventHeaderJsonMetaDisplay {
+        return display::EventHeaderJsonMetaDisplay::new(self);
     }
 
     /// Returns the offset into `event_data` where the event name starts.
@@ -539,12 +285,10 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
 
     /// Returns a formatter for the the event's name. The formatter tries to interpret
     /// the field name as UTF-8, but falls back to Latin1 for any invalid UTF-8 sequences.
-    pub fn name_display(&self) -> NameDisplay<'dat> {
+    pub fn name_display(&self) -> display::Utf8WithLatin1FallbackDisplay<'dat> {
         let start = self.name_start as usize;
         let end = start + self.name_len as usize;
-        return NameDisplay {
-            name: &self.event_data[start..end],
-        };
+        return display::Utf8WithLatin1FallbackDisplay::new(&self.event_data[start..end]);
     }
 
     /// Returns the offset into `event_data` where the activity ID section starts.
@@ -687,24 +431,22 @@ impl<'dat> EventHeaderItemInfo<'dat> {
 
     /// Returns a formatter for the the field's name. The formatter tries to interpret
     /// the field name as UTF-8, but falls back to Latin1 for any invalid UTF-8 sequences.
-    pub fn name_display(&self) -> NameDisplay<'dat> {
+    pub fn name_display(&self) -> display::Utf8WithLatin1FallbackDisplay<'dat> {
         let start = self.name_start as usize;
         let end = start + self.name_len as usize;
-        return NameDisplay {
-            name: &self.event_data[start..end],
-        };
+        return display::Utf8WithLatin1FallbackDisplay::new(&self.event_data[start..end]);
     }
 
     /// Returns a formatter for the field's name and tag.
     /// If the field tag is 0, this is the field name.
     /// If the field tag is nonzero, this is the field name plus a suffix like ";tag=0x1234".
-    pub fn name_and_tag_display(&self) -> NameAndTagDisplay<'dat> {
+    pub fn name_and_tag_display(&self) -> display::FieldNameAndTagDisplay<'dat> {
         let start = self.name_start as usize;
         let end = start + self.name_len as usize;
-        return NameAndTagDisplay {
-            name: &self.event_data[start..end],
-            tag: self.metadata().field_tag(),
-        };
+        return display::FieldNameAndTagDisplay::new(
+            &self.event_data[start..end],
+            self.metadata().field_tag(),
+        );
     }
 
     /// Returns the field value.
@@ -2136,6 +1878,10 @@ impl Default for EventHeaderEnumeratorContext {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+    use std::fs;
+    use std::time;
+
     use super::*;
 
     #[test]
@@ -2154,5 +1900,234 @@ mod tests {
             lowercase_hex_to_int(b"gfedcba9876543210ABCDEFG", 2),
             (0xedcba9876543210, 17)
         );
+    }
+
+    fn strnlen(bytes: &[u8]) -> usize {
+        let mut len = 0;
+        while len < bytes.len() && bytes[len] != 0 {
+            len += 1;
+        }
+        return len;
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Method {
+        MoveNext,
+        MoveNextSibling,
+        WriteItem,
+    }
+
+    /// For each event in the EventHeaderInterceptorLE64.dat file, use EventHeaderEnumerator to
+    /// enumerate the fields of the event. Generate JSON with the results.
+    fn enumerate_impl(
+        output_filename: &str,
+        buffer: &mut String,
+        tmp_str: &mut String,
+        method: Method,
+    ) -> Result<(), fmt::Error> {
+        const OPTIONS: PerfConvertOptions =
+            PerfConvertOptions::Default.and_not(PerfConvertOptions::BoolOutOfRangeAsString);
+
+        let mut dat_path = env::current_dir().unwrap();
+        dat_path.push("test_data");
+        dat_path.push("EventHeaderInterceptorLE64.dat");
+
+        let mut ctx = EventHeaderEnumeratorContext::new();
+        buffer.push('\u{FEFF}');
+        let mut json = writers::JsonWriter::new(buffer, OPTIONS, false);
+
+        json.write_newline_before_value(0)?;
+        json.write_property_name("EventHeaderInterceptorLE64.dat")?;
+        json.write_array_begin()?;
+
+        let dat_vec = fs::read(dat_path).unwrap();
+        let dat_bytes = &dat_vec[..];
+        let mut dat_pos = 0;
+        while dat_pos < dat_bytes.len() {
+            assert!(dat_bytes.len() - dat_pos >= 4);
+            let size =
+                u32::from_le_bytes(dat_bytes[dat_pos..dat_pos + 4].try_into().unwrap()) as usize;
+            assert!(size >= 4);
+            assert!(size <= dat_bytes.len() - dat_pos);
+
+            let name_pos = dat_pos + 4;
+            dat_pos += size;
+
+            let name_len = strnlen(&dat_bytes[name_pos..dat_pos]);
+            assert!(name_pos + name_len < dat_pos);
+
+            let tracepoint_name =
+                std::str::from_utf8(&dat_bytes[name_pos..name_pos + name_len]).unwrap();
+            let event_data = &dat_bytes[name_pos + name_len + 1..dat_pos];
+            match ctx.enumerate(tracepoint_name, event_data) {
+                Err(e) => {
+                    json.write_newline_before_value(1)?;
+                    json.write_object_begin()?;
+                    json.write_property_name_json_safe("n")?;
+                    json.write_value_quoted(|w| w.write_str_with_json_escape(tracepoint_name))?;
+                    json.write_property_name_json_safe("enumerate_error")?;
+                    json.write_value_quoted(|w| w.write_display_with_no_filter(e))?;
+                    json.write_object_end()?;
+                }
+                Ok(mut e) => {
+                    let ei = e.event_info();
+                    json.write_newline_before_value(2)?;
+                    json.write_object_begin()?;
+
+                    json.write_property_name_json_safe("n")?;
+                    json.write_value_quoted(|w| {
+                        w.write_display_with_no_filter(ei.identity_display())
+                    })?;
+
+                    if Method::WriteItem == method {
+                        tmp_str.clear();
+                        if e.write_item_and_move_next_sibling(tmp_str, false, OPTIONS)? {
+                            json.write_value(|w| w.write_display_with_no_filter(&tmp_str))?;
+                        }
+                    } else if e.move_next() {
+                        loop {
+                            let ii = e.item_info();
+                            let m = ii.metadata();
+                            match e.state() {
+                                EventHeaderEnumeratorState::Value => {
+                                    if !m.is_element() {
+                                        json.write_property_name_from_item_info(&ii)?;
+                                    }
+
+                                    tmp_str.clear();
+                                    ii.value().write_json_scalar_to(tmp_str, OPTIONS)?;
+                                    json.write_value(|w| w.write_display_with_no_filter(&tmp_str))?;
+                                }
+                                EventHeaderEnumeratorState::StructBegin => {
+                                    if !m.is_element() {
+                                        json.write_property_name_from_item_info(&ii)?;
+                                    }
+                                    json.write_object_begin()?;
+                                }
+                                EventHeaderEnumeratorState::StructEnd => json.write_object_end()?,
+                                EventHeaderEnumeratorState::ArrayBegin => {
+                                    json.write_property_name_from_item_info(&ii)?;
+                                    if Method::MoveNextSibling == method && m.type_size() != 0 {
+                                        tmp_str.clear();
+                                        ii.value().write_json_simple_array_to(tmp_str, OPTIONS)?;
+                                        json.write_value(|w| {
+                                            w.write_display_with_no_filter(&tmp_str)
+                                        })?;
+
+                                        if !e.move_next_sibling() {
+                                            break;
+                                        }
+
+                                        continue; // skip move_next()
+                                    }
+                                    json.write_array_begin()?;
+                                }
+                                EventHeaderEnumeratorState::ArrayEnd => json.write_array_end()?,
+                                _ => {
+                                    json.write_property_name_json_safe("unexpected_state")?;
+                                    json.write_value_quoted(|w| {
+                                        w.write_display_with_no_filter(e.state())
+                                    })?;
+                                }
+                            }
+
+                            if !e.move_next() {
+                                break;
+                            }
+                        }
+                    }
+
+                    json.write_property_name_json_safe("meta")?;
+                    json.write_object_begin()?;
+                    json.write_value(|w| w.write_display_with_no_filter(ei.json_meta_display()))?;
+                    json.write_object_end()?;
+
+                    json.write_object_end()?;
+                }
+            }
+        }
+
+        json.write_array_end()?;
+
+        if cfg!(windows) {
+            buffer.push('\r');
+        }
+
+        buffer.push('\n');
+
+        if !output_filename.is_empty() {
+            let mut out_path = env::current_dir().unwrap().join("actual");
+            fs::create_dir_all(&out_path).unwrap();
+            out_path.push(output_filename);
+            fs::write(&out_path, buffer.as_bytes()).unwrap();
+        }
+
+        return Ok(());
+    }
+
+    #[test]
+    fn enumerate() -> Result<(), fmt::Error> {
+        let mut tmp_str = String::new();
+
+        let mut movenext_buffer = String::new();
+        enumerate_impl(
+            "enumerate_movenext.json",
+            &mut movenext_buffer,
+            &mut tmp_str,
+            Method::MoveNext,
+        )?;
+
+        let mut movenextsibling_buffer = String::new();
+        enumerate_impl(
+            "enumerate_movenextsibling.json",
+            &mut movenextsibling_buffer,
+            &mut tmp_str,
+            Method::MoveNextSibling,
+        )?;
+
+        let mut writeitem_buffer = String::new();
+        enumerate_impl(
+            "enumerate_writeitem.json",
+            &mut writeitem_buffer,
+            &mut tmp_str,
+            Method::WriteItem,
+        )?;
+
+        assert_eq!(movenext_buffer, movenextsibling_buffer);
+        assert_eq!(movenext_buffer, writeitem_buffer);
+        return Ok(());
+    }
+
+    #[test]
+    #[ignore]
+    fn benchmark() -> Result<(), fmt::Error> {
+        const ITERATIONS: usize = 1000;
+        let mut buffer = String::new();
+        let mut tmp_str = String::new();
+
+        buffer.clear();
+        enumerate_impl("", &mut buffer, &mut tmp_str, Method::MoveNext)?;
+        let movenext_start = time::Instant::now();
+        for _ in 0..ITERATIONS {
+            buffer.clear();
+            enumerate_impl("", &mut buffer, &mut tmp_str, Method::MoveNext)?;
+        }
+        let movenext_duration = movenext_start.elapsed();
+
+        buffer.clear();
+        enumerate_impl("", &mut buffer, &mut tmp_str, Method::MoveNextSibling)?;
+        let movenextsibling_start = time::Instant::now();
+        for _ in 0..ITERATIONS {
+            buffer.clear();
+            enumerate_impl("", &mut buffer, &mut tmp_str, Method::MoveNextSibling)?;
+        }
+        let movenextsibling_duration = movenextsibling_start.elapsed();
+
+        print!(
+            "MoveNext: {:?}\nMoveNextSibling: {:?}\n",
+            movenext_duration, movenextsibling_duration,
+        );
+
+        return Ok(());
     }
 }

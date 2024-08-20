@@ -1,10 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-use crate::*;
-use core::fmt;
 use core::mem;
 use core::ops;
+
+use crate::display;
+use crate::perf_abi;
+use crate::perf_session;
+
+use crate::byte_reader::PerfByteReader;
+use crate::perf_event_desc::PerfEventDesc;
+use crate::perf_event_format::PerfEventFormat;
 
 /// Represents the header and raw data of a perf event.
 ///
@@ -26,7 +32,7 @@ pub struct PerfEventBytes<'dat> {
     ///
     /// The header comes from `data[0..8]`, but has been byte-swapped if appropriate (i.e.
     /// if the event byte order does not match the host byte order).
-    pub header: PerfEventHeader,
+    pub header: perf_abi::PerfEventHeader,
 
     /// The bytes of the event, including header and content, in event byte order.
     ///
@@ -65,8 +71,8 @@ pub struct PerfEventBytes<'dat> {
 
 impl<'dat> PerfEventBytes<'dat> {
     /// Constructs a new PerfEventBytes instance.
-    pub const fn new(header: PerfEventHeader, data: &'dat [u8]) -> PerfEventBytes<'dat> {
-        debug_assert!(data.len() >= mem::size_of::<PerfEventHeader>());
+    pub const fn new(header: perf_abi::PerfEventHeader, data: &'dat [u8]) -> PerfEventBytes<'dat> {
+        debug_assert!(data.len() >= mem::size_of::<perf_abi::PerfEventHeader>());
         return PerfEventBytes { header, data };
     }
 }
@@ -87,7 +93,7 @@ pub struct PerfNonSampleEventInfo<'a> {
     /// clock offset.
     ///
     /// Valid always.
-    pub session_info: &'a PerfSessionInfo,
+    pub session_info: &'a perf_session::PerfSessionInfo,
 
     /// Information about the event (shared by all events with the same `id`).
     ///
@@ -123,10 +129,10 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     /// Requires that `data` is at least 8 bytes long (must start with the [`PerfEventHeader`]).
     pub const fn new(
         data: &'a [u8],
-        session_info: &'a PerfSessionInfo,
+        session_info: &'a perf_session::PerfSessionInfo,
         event_desc: &'a PerfEventDesc,
     ) -> Self {
-        debug_assert!(data.len() >= mem::size_of::<PerfEventHeader>());
+        debug_assert!(data.len() >= mem::size_of::<perf_abi::PerfEventHeader>());
         return Self {
             data,
             session_info,
@@ -164,13 +170,13 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     /// Returns the header of the event, in host-endian byte order.
     /// (Reads the header from `data[0..8]` and byte-swaps as appropriate based on
     /// the session's byte order.)
-    pub fn header(&self) -> PerfEventHeader {
+    pub fn header(&self) -> perf_abi::PerfEventHeader {
         let array = self.data[..8].try_into().unwrap();
-        return PerfEventHeader::from_bytes(&array, self.session_info.byte_reader());
+        return perf_abi::PerfEventHeader::from_bytes(&array, self.session_info.byte_reader());
     }
 
     /// Returns flags indicating which data was present in the event.
-    pub const fn sample_type(&self) -> PerfEventAttrSampleType {
+    pub const fn sample_type(&self) -> perf_abi::PerfEventAttrSampleType {
         self.event_desc.attr().sample_type
     }
 
@@ -182,7 +188,7 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     }
 
     /// Gets the event's `time` as a [`PerfTimeSpec`], using offset information from `session_info`.
-    pub const fn time_spec(&self) -> PerfTimeSpec {
+    pub const fn time_spec(&self) -> perf_session::PerfTimeSpec {
         self.session_info.time_to_time_spec(self.time)
     }
 
@@ -208,18 +214,15 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     /// - `"tid": 124` (omitted if unavailable or if pid is shown and pid == tid)
     /// - `"provider": "SystemName"` (omitted if unavailable)
     /// - `"event": "TracepointName"` (omitted if unavailable)
-    pub const fn json_meta_display(&self) -> JsonMetaDisplay {
-        JsonMetaDisplay {
-            session_info: self.session_info,
-            event_desc: self.event_desc,
-            time: self.time,
-            cpu: self.cpu,
-            pid: self.pid,
-            tid: self.tid,
-            add_comma_before_first_item: false,
-            meta_options: PerfMetaOptions::Default,
-            convert_options: PerfConvertOptions::Default,
-        }
+    pub const fn json_meta_display(&self) -> display::EventInfoJsonMetaDisplay {
+        display::EventInfoJsonMetaDisplay::new(
+            self.session_info,
+            self.event_desc,
+            self.time,
+            self.cpu,
+            self.pid,
+            self.tid,
+        )
     }
 }
 
@@ -242,7 +245,7 @@ pub struct PerfSampleEventInfo<'a> {
     /// clock offset.
     ///
     /// Valid always.
-    pub session_info: &'a PerfSessionInfo,
+    pub session_info: &'a perf_session::PerfSessionInfo,
 
     /// Information about the event (shared by all events with the same `id`).
     ///
@@ -302,10 +305,10 @@ impl<'a> PerfSampleEventInfo<'a> {
     /// Requires that `data` is at least 8 bytes long (must start with the [`PerfEventHeader`]).
     pub const fn new(
         data: &'a [u8],
-        session_info: &'a PerfSessionInfo,
+        session_info: &'a perf_session::PerfSessionInfo,
         event_desc: &'a PerfEventDesc,
     ) -> Self {
-        debug_assert!(data.len() >= mem::size_of::<PerfEventHeader>());
+        debug_assert!(data.len() >= mem::size_of::<perf_abi::PerfEventHeader>());
         return Self {
             data,
             session_info,
@@ -349,13 +352,13 @@ impl<'a> PerfSampleEventInfo<'a> {
     /// Returns the header of the event, in host-endian byte order.
     /// (Reads the header from `data[0..8]` and byte-swaps as appropriate based on
     /// the session's byte order.)
-    pub fn header(&self) -> PerfEventHeader {
+    pub fn header(&self) -> perf_abi::PerfEventHeader {
         let array = self.data[..8].try_into().unwrap();
-        return PerfEventHeader::from_bytes(&array, self.session_info.byte_reader());
+        return perf_abi::PerfEventHeader::from_bytes(&array, self.session_info.byte_reader());
     }
 
     /// Returns flags indicating which data was present in the event.
-    pub const fn sample_type(&self) -> PerfEventAttrSampleType {
+    pub const fn sample_type(&self) -> perf_abi::PerfEventAttrSampleType {
         self.event_desc.attr().sample_type
     }
 
@@ -368,7 +371,7 @@ impl<'a> PerfSampleEventInfo<'a> {
     }
 
     /// Gets the event's `time` as a [`PerfTimeSpec`], using offset information from `session_info`.
-    pub const fn time_spec(&self) -> PerfTimeSpec {
+    pub const fn time_spec(&self) -> perf_session::PerfTimeSpec {
         self.session_info.time_to_time_spec(self.time)
     }
 
@@ -436,164 +439,14 @@ impl<'a> PerfSampleEventInfo<'a> {
     /// - `"tid": 124` (omitted if unavailable or if pid is shown and pid == tid)
     /// - `"provider": "SystemName"` (omitted if unavailable)
     /// - `"event": "TracepointName"` (omitted if unavailable)
-    pub const fn json_meta_display(&self) -> JsonMetaDisplay {
-        JsonMetaDisplay {
-            session_info: self.session_info,
-            event_desc: self.event_desc,
-            time: self.time,
-            cpu: self.cpu,
-            pid: self.pid,
-            tid: self.tid,
-            add_comma_before_first_item: false,
-            meta_options: PerfMetaOptions::Default,
-            convert_options: PerfConvertOptions::Default,
-        }
-    }
-}
-
-/// Formatter for the "meta" suffix of an event, i.e. `"time": "...", "cpu": 3`.
-pub struct JsonMetaDisplay<'a> {
-    session_info: &'a PerfSessionInfo,
-    event_desc: &'a PerfEventDesc,
-    time: u64,
-    cpu: u32,
-    pid: u32,
-    tid: u32,
-    add_comma_before_first_item: bool,
-    meta_options: PerfMetaOptions,
-    convert_options: PerfConvertOptions,
-}
-
-impl<'a> fmt::Display for JsonMetaDisplay<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
-        self.write_to(f)?;
-        return Ok(());
-    }
-}
-
-impl<'a> JsonMetaDisplay<'a> {
-    /// Configures whether a comma will be written before the first item, e.g.
-    /// `, "cpu": 3` (true) instead of `"cpu": 3` (false). The default value is false.
-    ///
-    /// Note that if no items are written, no comma is written regardless of this setting.
-    pub fn add_comma_before_first_item(&mut self, value: bool) -> &mut Self {
-        self.add_comma_before_first_item = value;
-        return self;
-    }
-
-    /// Configures the items that will be included in the suffix.
-    /// The default value is [`PerfMetaOptions::Default`].
-    pub fn meta_options(&mut self, value: PerfMetaOptions) -> &mut Self {
-        self.meta_options = value;
-        return self;
-    }
-
-    /// Configures the conversion options. The default value is [`PerfConvertOptions::Default`].
-    pub fn convert_options(&mut self, value: PerfConvertOptions) -> &mut Self {
-        self.convert_options = value;
-        return self;
-    }
-
-    /// Writes event metadata as a comma-separated list of 0 or more
-    /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
-    /// Returns true if any items were written, false if nothing was written.
-    pub fn write_to<W: fmt::Write + ?Sized>(&self, w: &mut W) -> Result<bool, fmt::Error> {
-        let mut json =
-            writers::JsonWriter::new(w, self.convert_options, self.add_comma_before_first_item);
-        let mut any_written = false;
-        let sample_type = self.event_desc.attr().sample_type;
-
-        if sample_type.has_flag(PerfEventAttrSampleType::Time)
-            && self.meta_options.has_flag(PerfMetaOptions::Time)
-        {
-            any_written = true;
-            json.write_property_name_json_safe("time")?;
-            if self.session_info.clock_offset_known() {
-                let time_spec = self.session_info.time_to_time_spec(self.time);
-                let dt = writers::date_time::DateTime::new(time_spec.seconds());
-                if dt.valid() {
-                    json.write_value_quoted(|w| {
-                        w.write_fmt_with_no_filter(format_args!(
-                            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:07}Z",
-                            dt.year(),
-                            dt.month_of_year(),
-                            dt.day_of_month(),
-                            dt.hour(),
-                            dt.minute(),
-                            dt.second(),
-                            time_spec.nanoseconds() / 100,
-                        ))
-                    })?;
-                } else {
-                    json.write_value_quoted(|w| {
-                        w.write_fmt_with_no_filter(format_args!(
-                            "TIME({}.{:09})",
-                            time_spec.seconds(),
-                            time_spec.nanoseconds()
-                        ))
-                    })?;
-                }
-            } else {
-                json.write_value(|w| w.write_float64(self.time as f64 / 1000000000.0))?;
-            }
-        }
-
-        if sample_type.has_flag(PerfEventAttrSampleType::Cpu)
-            && self.meta_options.has_flag(PerfMetaOptions::Cpu)
-        {
-            any_written = true;
-            json.write_property_name_json_safe("cpu")?;
-            json.write_value(|w| w.write_display_with_no_filter(self.cpu))?;
-        }
-
-        if sample_type.has_flag(PerfEventAttrSampleType::Tid) {
-            if self.meta_options.has_flag(PerfMetaOptions::Pid) {
-                any_written = true;
-                json.write_property_name_json_safe("pid")?;
-                json.write_value(|w| w.write_display_with_no_filter(self.pid))?;
-            }
-
-            if self.meta_options.has_flag(PerfMetaOptions::Tid)
-                && (self.pid != self.tid || !self.meta_options.has_flag(PerfMetaOptions::Pid))
-            {
-                any_written = true;
-                json.write_property_name_json_safe("tid")?;
-                json.write_value(|w| w.write_display_with_no_filter(self.tid))?;
-            }
-        }
-
-        if self
-            .meta_options
-            .has_flag(PerfMetaOptions::Provider.or(PerfMetaOptions::Event))
-        {
-            let provider;
-            let event;
-            let desc_name = self.event_desc.name();
-            match self.event_desc.format() {
-                Some(format) if desc_name.is_empty() => {
-                    provider = format.system_name();
-                    event = format.name();
-                }
-                _ => {
-                    let mut parts = desc_name.split(':');
-                    provider = parts.next().unwrap_or("");
-                    event = parts.next().unwrap_or("");
-                }
-            }
-
-            if self.meta_options.has_flag(PerfMetaOptions::Provider) && !provider.is_empty() {
-                any_written = true;
-                json.write_property_name_json_safe("provider")?;
-                json.write_value_quoted(|w| w.write_str_with_json_escape(provider))?;
-            }
-
-            if self.meta_options.has_flag(PerfMetaOptions::Event) && !event.is_empty() {
-                any_written = true;
-                json.write_property_name_json_safe("event")?;
-                json.write_value_quoted(|w| w.write_str_with_json_escape(event))?;
-            }
-        }
-
-        return Ok(any_written);
+    pub const fn json_meta_display(&self) -> display::EventInfoJsonMetaDisplay {
+        display::EventInfoJsonMetaDisplay::new(
+            self.session_info,
+            self.event_desc,
+            self.time,
+            self.cpu,
+            self.pid,
+            self.tid,
+        )
     }
 }

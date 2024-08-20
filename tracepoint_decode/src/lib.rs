@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
 #![allow(clippy::needless_return)]
 
@@ -15,8 +15,6 @@ pub use enumerator::EventHeaderEnumeratorError;
 pub use enumerator::EventHeaderEnumeratorState;
 pub use enumerator::EventHeaderEventInfo;
 pub use enumerator::EventHeaderItemInfo;
-pub use enumerator::NameAndTagDisplay;
-pub use enumerator::NameDisplay;
 
 pub use perf_abi::PerfEventAttr;
 pub use perf_abi::PerfEventAttrOptions;
@@ -50,8 +48,8 @@ pub use perf_item::PerfTextEncoding;
 pub use perf_session::PerfSessionInfo;
 pub use perf_session::PerfTimeSpec;
 
-pub mod _internal;
 pub mod changelog;
+pub mod display;
 
 mod byte_reader;
 mod charconv;
