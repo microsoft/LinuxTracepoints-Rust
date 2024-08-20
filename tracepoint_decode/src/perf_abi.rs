@@ -481,7 +481,7 @@ pub struct PerfEventAttr {
     pub config1: u64,
 
     /// config2: union of bp_len, kprobe_addr (when kprobe_func == NULL),
-    /// probe_offset (for perf_[k,u]probe), config2 (extension of config1).
+    /// probe_offset (for `perf_[k,u]probe`), config2 (extension of config1).
     pub config2: u64,
 
     /// branch_sample_type:

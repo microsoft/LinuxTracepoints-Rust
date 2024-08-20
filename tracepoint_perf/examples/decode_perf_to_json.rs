@@ -4,6 +4,7 @@
 //! Demonstrates how to use [`tp::PerfDataFileReader`] to decode events from a
 //! `perf.data` file to JSON.
 
+use core::fmt;
 use std::env;
 use std::fs;
 use std::io;
@@ -43,8 +44,7 @@ fn main() -> process::ExitCode {
     while let Some(arg) = args.next() {
         if !arg.starts_with('-') {
             input_names.push(arg);
-        } else if arg.starts_with("--") {
-            let flag = &arg[2..];
+        } else if let Some(flag) = arg.strip_prefix("--") {
             match flag {
                 "output" => {
                     if let Some(arg) = env::args().next() {
@@ -125,11 +125,9 @@ fn main() -> process::ExitCode {
     match write_json(&mut output, &input_names, is_tty) {
         Err(e) => {
             eprintln!("error: {}", e);
-            return process::ExitCode::FAILURE;
+            process::ExitCode::FAILURE
         }
-        Ok(exit_code) => {
-            return exit_code;
-        }
+        Ok(exit_code) => exit_code,
     }
 }
 
@@ -196,8 +194,11 @@ fn write_json(
 
                 let event = reader.current_event();
                 if event.header.ty != td::PerfEventHeaderType::Sample {
-                    // Non-sample event, typically information about the system or information
-                    // about the trace itself.
+                    // Non-sample event, typically contains information about the system or
+                    // information about the trace itself.
+
+                    // Event will be formatted as something like:
+                    // { "NonSample": "Mmap", "size": 48, "meta": {...} }
 
                     // Event info (timestamp, cpu, pid, etc.) may be available.
                     let nonsample_event_info = reader.get_non_sample_event_info(&event);
@@ -212,6 +213,7 @@ fn write_json(
                     }
 
                     // JSON: "NonSample": "Type", "size": Size
+                    // Note that nonsample_event_info.name() may be available, but it's usually not very informative.
                     write!(
                         json_out,
                         " \"NonSample\": \"{}\", \"size\": {}",
@@ -219,20 +221,23 @@ fn write_json(
                     )?;
 
                     if let Ok(nonsample_event_info) = nonsample_event_info {
-                        // JSON: , "meta":{...}
-                        write!(
-                            json_out,
-                            ", \"meta\": {{{}}}",
-                            nonsample_event_info.json_meta_display()
-                        )?;
+                        // JSON: , "meta": {...}
+                        write_json_meta(json_out, &nonsample_event_info.json_meta_display())?;
                     }
                 } else {
                     // Sample event, e.g. tracepoint event.
 
-                    // Event info (timestamp, cpu, pid, etc.) may be available.
+                    // Event will be formatted as something like:
+                    // { "n": "provider:name", "Field1": Value1, ..., "meta": {...} }
+
+                    // Event info (timestamp, cpu, pid, etc.) should be available.
                     match reader.get_sample_event_info(&event) {
                         Err(e) => {
                             // Unexpected: Error getting event info.
+                            eprintln!(
+                                "warning: get_sample_event_info(\"{}\") failed: {}",
+                                input_name, e
+                            );
 
                             // JSON: "n": null, "get_sample_event_info": "Error", "size": Size
                             write!(
@@ -240,131 +245,81 @@ fn write_json(
                                 " \"n\": null, \"get_sample_event_info\": \"{}\", \"size\":{}",
                                 e, event.header.size
                             )?;
-                            eprintln!(
-                                "warning: get_sample_event_info(\"{}\") failed: {}",
-                                input_name, e
-                            );
                         }
                         Ok(sample_event_info) => {
                             // Found event info (attributes). Include data from it in the output.
 
-                            if let Some(event_format) = sample_event_info.format() {
-                                let enumerator = if event_format.decoding_style()
-                                    != td::PerfEventDecodingStyle::EventHeader
-                                {
-                                    Err(td::EventHeaderEnumeratorError::Success)
-                                } else {
-                                    // Decode using EventHeader metadata.
-                                    enumerator_ctx.enumerate(
-                                        event_format.name(),
-                                        sample_event_info.user_data(),
-                                    )
-                                };
+                            if let Ok(mut enumerator) = enumerator_ctx.enumerate(&sample_event_info)
+                            {
+                                // Decode using EventHeader metadata.
 
-                                if let Ok(mut enumerator) = enumerator {
-                                    // Decode using EventHeader metadata.
+                                // event_info has a bunch of information about the event.
+                                let eh_event_info = enumerator.event_info();
 
-                                    // event_info has a bunch of information about the event.
-                                    let eh_event_info = enumerator.event_info();
+                                // JSON: "n": "Name"
+                                write_json_n(json_out, &eh_event_info.json_identity_display())?;
 
-                                    // JSON: "n":"Name"
-                                    write!(
-                                        json_out,
-                                        " \"n\": \"{:#}\"",
-                                        eh_event_info.json_identity_display(),
-                                    )?;
+                                // Current position is "before first item". The next sibling of the current
+                                // position is "after last item". So write_json_item_and_move_next_sibling will
+                                // write all items (if any) in the event.
+                                json_buf.clear();
+                                _ = enumerator.write_json_item_and_move_next_sibling(
+                                    &mut json_buf, // fmt::Write works here, but io::Write doesn't. Use a String as a buffer.
+                                    true,          // Include a ',' before the first item (if any).
+                                    td::PerfConvertOptions::Default,
+                                );
 
-                                    // Make a JSON string with all the fields and their values.
-                                    json_buf.clear();
-                                    _ = enumerator.write_item_and_move_next_sibling(
-                                        &mut json_buf,
-                                        true,
-                                        td::PerfConvertOptions::Default
-                                            .and_not(td::PerfConvertOptions::RootName), // We don't want a JSON "ItemName": prefix.
+                                // JSON: , "Field1": Value1, "Field2": Value2
+                                write!(json_out, "{}", json_buf)?;
+
+                                if enumerator.state() == td::EventHeaderEnumeratorState::Error {
+                                    // Unexpected: Error decoding event.
+                                    eprintln!(
+                                        "warning: move_next failed: {}",
+                                        enumerator.last_error()
                                     );
+                                }
 
-                                    // JSON: fields...
-                                    write!(json_out, "{}", json_buf)?;
+                                // JSON: , "meta": {...}
+                                write_json_meta(
+                                    json_out,
+                                    &eh_event_info.json_meta_display(Some(&sample_event_info)),
+                                )?;
+                            } else if let Some(event_format) = sample_event_info.format() {
+                                // Decode using TraceFS format metadata.
 
-                                    if enumerator.state() == td::EventHeaderEnumeratorState::Error {
-                                        // Unexpected: Error decoding event.
-                                        eprintln!(
-                                            "warning: move_next failed: {}",
-                                            enumerator.last_error()
-                                        );
-                                    }
+                                // JSON: "n": "Name"
+                                write_json_n(json_out, &sample_event_info.json_name_display())?;
 
-                                    // Combine metadata from sample_event_info and from eh_event_info.
-                                    json_buf.clear();
-                                    _ = sample_event_info
-                                        .json_meta_display()
-                                        .write_to(&mut json_buf);
-                                    _ = eh_event_info
-                                        .json_meta_display()
-                                        .add_comma_before_first_item(!json_buf.is_empty())
-                                        .write_to(&mut json_buf);
+                                // Typically the "common" fields are not interesting, so skip them.
+                                let skip_fields = event_format.common_field_count();
+                                for field_format in event_format.fields().iter().skip(skip_fields) {
+                                    let field_value =
+                                        field_format.get_field_value(&sample_event_info);
 
-                                    // JSON: ,"meta":{...}
-                                    write!(json_out, ", \"meta\": {{ {} }}", json_buf)?;
-                                } else {
-                                    // Decode using TraceFS format metadata.
-
-                                    // JSON: "n":"Name"
+                                    // JSON: , "FieldName": Value
                                     write!(
                                         json_out,
-                                        " \"n\": \"{}\"",
-                                        td::display::JsonEscapeDisplay::new(
-                                            sample_event_info.name()
-                                        )
-                                    )?;
-
-                                    // Typically the "common" fields are not interesting, so skip them.
-                                    let skip_fields = event_format.common_field_count();
-                                    for field_format in
-                                        event_format.fields().iter().skip(skip_fields)
-                                    {
-                                        let field_value = field_format.get_field_value(
-                                            sample_event_info.raw_data(),
-                                            sample_event_info.byte_reader(),
-                                        );
-
-                                        write!(
-                                            json_out,
-                                            ", \"{}\": {:#}",
-                                            td::display::JsonEscapeDisplay::new(
-                                                field_format.name()
-                                            ),
-                                            field_value
-                                        )?;
-                                    }
-
-                                    // JSON: ,"meta":{...}
-                                    write!(
-                                        json_out,
-                                        ", \"meta\": {{ {} }}",
-                                        sample_event_info.json_meta_display()
+                                        ", \"{}\": {}",
+                                        td::display::JsonEscapeDisplay::new(field_format.name()),
+                                        field_value.json_display(),
                                     )?;
                                 }
+
+                                // JSON: , "meta": {...}
+                                write_json_meta(json_out, &sample_event_info.json_meta_display())?;
                             } else {
                                 // Unexpected: Did not find TraceFS format metadata for this event.
                                 eprintln!(
                                     "warning: no format found for event \"{}\"",
-                                    sample_event_info.name()
+                                    sample_event_info.name(),
                                 );
 
-                                // JSON: "n":"Name"
-                                write!(
-                                    json_out,
-                                    " \"n\": \"{}\"",
-                                    td::display::JsonEscapeDisplay::new(sample_event_info.name())
-                                )?;
+                                // JSON: "n": "Name"
+                                write_json_n(json_out, &sample_event_info.json_name_display())?;
 
-                                // JSON: ,"meta":{...}
-                                write!(
-                                    json_out,
-                                    ", \"meta\": {{ {} }}",
-                                    sample_event_info.json_meta_display()
-                                )?;
+                                // JSON: , "meta": {...}
+                                write_json_meta(json_out, &sample_event_info.json_meta_display())?;
                             }
                         }
                     }
@@ -386,5 +341,18 @@ fn write_json(
     // JSON: }
     // End of JSON.
     writeln!(json_out, " }}")?;
-    return Ok(exit_code);
+    Ok(exit_code)
+}
+
+/// JSON: "n":"Name"
+fn write_json_n<D: fmt::Display>(json_out: &mut dyn io::Write, name_display: &D) -> io::Result<()> {
+    write!(json_out, " \"n\": \"{}\"", name_display)
+}
+
+/// JSON: , "meta": { ... }
+fn write_json_meta<D: fmt::Display>(
+    json_out: &mut dyn io::Write,
+    meta_display: &D,
+) -> io::Result<()> {
+    write!(json_out, ", \"meta\": {{ {} }}", meta_display)
 }

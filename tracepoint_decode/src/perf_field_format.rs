@@ -827,6 +827,22 @@ impl PerfFieldFormat {
         return None;
     }
 
+    /// Given the sample event info, return a [`PerfItemValue`] representing the field's type
+    /// and data bytes. This is the same as
+    /// `get_field_value_with_data_and_reader(sample_event_info.raw_data(), sample_event_info.byte_reader())`.
+    ///
+    /// Returns an empty value (result.encoding() == Invalid) for out-of-bounds, i.e. if `raw_data` is
+    /// too short for the expected position+length of the field's data bytes.
+    pub fn get_field_value<'dat>(
+        &self,
+        sample_event_info: &PerfSampleEventInfo<'dat>,
+    ) -> PerfItemValue<'dat> {
+        self.get_field_value_with_data_and_reader(
+            sample_event_info.raw_data(),
+            sample_event_info.byte_reader(),
+        )
+    }
+
     /// Given the event's raw data (e.g. PerfSampleEventInfo::raw_data) and a `byte_reader`
     /// that indicates whether the event is big-endian or little-endian, return a
     /// [`PerfItemValue`] representing the field's type and data bytes. Returns an empty
@@ -835,7 +851,7 @@ impl PerfFieldFormat {
     ///
     /// Does not do any byte-swapping. This method uses `byte_reader` to resolve
     /// `data_loc` and `rel_loc` references, not to fix up the field data.
-    pub fn get_field_value<'dat>(
+    pub fn get_field_value_with_data_and_reader<'dat>(
         &self,
         event_raw_data: &'dat [u8],
         byte_reader: PerfByteReader,
