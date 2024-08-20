@@ -20,7 +20,6 @@ use std::str;
 use std::vec;
 
 use tracepoint_decode as td;
-use tracepoint_decode::EventHeaderEnumeratorContext;
 
 fn main() -> process::ExitCode {
     let mut result = process::ExitCode::SUCCESS;
@@ -85,7 +84,7 @@ fn print_events_from_dat_file(filename: &str, file_bytes: &[u8]) -> bool {
         match enumerator_context.enumerate_with_name_and_data(
             tracepoint_name,
             event_data,
-            EventHeaderEnumeratorContext::MOVE_NEXT_LIMIT_DEFAULT,
+            td::EventHeaderEnumeratorContext::MOVE_NEXT_LIMIT_DEFAULT,
         ) {
             Err(e) => {
                 // Header of the event was invalid.
