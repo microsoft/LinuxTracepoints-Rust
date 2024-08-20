@@ -265,7 +265,7 @@ fn merge_event_desc(
     }
 
     if !merge_event_scratch_buffer.is_empty()
-        && !output.add_event_desc(&merge_event_scratch_buffer, desc.attr(), desc.name())
+        && !output.add_event_desc(merge_event_scratch_buffer, desc.attr(), desc.name())
     {
         write_warning_message(
             output_path,

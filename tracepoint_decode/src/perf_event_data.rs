@@ -126,7 +126,7 @@ pub struct PerfNonSampleEventInfo<'a> {
 
 impl<'a> PerfNonSampleEventInfo<'a> {
     /// Constructs a new PerfNonSampleEventInfo instance.
-    /// Requires that `data` is at least 8 bytes long (must start with the [`PerfEventHeader`]).
+    /// Requires that `data` is at least 8 bytes long (must start with the [`crate::PerfEventHeader`]).
     pub const fn new(
         data: &'a [u8],
         session_info: &'a perf_session::PerfSessionInfo,
@@ -181,13 +181,29 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     }
 
     /// Gets the event's name, e.g. "sched:sched_switch".
+    ///
     /// - If name is available from `PERF_HEADER_EVENT_DESC`, return it.
     /// - Otherwise, return empty string.
     pub fn name(&self) -> &str {
         self.event_desc.name()
     }
 
-    /// Gets the event's `time` as a [`PerfTimeSpec`], using offset information from `session_info`.
+    /// Gets a `Display` object for a JSON-escaped event name, e.g. `sched:sched_switch`.
+    ///
+    /// - If name is available from `PERF_HEADER_EVENT_DESC`, return it.
+    /// - Otherwise, if name is available from format, return it.
+    /// - Otherwise, return empty string.
+    ///
+    /// The returned `Display` object can be used with format macros like `write!` or
+    /// `println!` to write the name as a JSON-escaped string. This returns the same
+    /// value as the [PerfNonSampleEventInfo::name] method, but as a Display object (can
+    /// be passed to a format macro) and with JSON escaping applied (control chars,
+    /// quotes, and backslashes are escaped)
+    pub fn json_name_display(&self) -> display::JsonEscapeDisplay {
+        display::JsonEscapeDisplay::new(self.name())
+    }
+
+    /// Gets the event's `time` as a [`crate::PerfTimeSpec`], using offset information from `session_info`.
     pub const fn time_spec(&self) -> perf_session::PerfTimeSpec {
         self.session_info.time_to_time_spec(self.time)
     }
@@ -197,13 +213,13 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     /// The returned formatter writes event metadata as a comma-separated list of 0 or more
     /// JSON name-value pairs, e.g. `"time": "...", "cpu": 3` (including the quotation marks).
     ///
-    /// The included items default to [`PerfMetaOptions::Default`], but can be customized with
+    /// The included items default to [`crate::PerfMetaOptions::Default`], but can be customized with
     /// the `meta_options()` property.
     ///
     /// One name-value pair is appended for each metadata item that is both requested
     /// by `meta_options` and has a meaningful value available in the event. For example,
     /// the "cpu" metadata item is only appended if the event has a non-zero `Cpu` value,
-    /// even if the `meta_options` property includes [`PerfMetaOptions::Cpu`].
+    /// even if the `meta_options` property includes [`crate::PerfMetaOptions::Cpu`].
     ///
     /// The following metadata items are supported:
     ///
@@ -302,7 +318,7 @@ pub struct PerfSampleEventInfo<'a> {
 
 impl<'a> PerfSampleEventInfo<'a> {
     /// Constructs a new PerfSampleEventInfo instance.
-    /// Requires that `data` is at least 8 bytes long (must start with the [`PerfEventHeader`]).
+    /// Requires that `data` is at least 8 bytes long (must start with the [`crate::PerfEventHeader`]).
     pub const fn new(
         data: &'a [u8],
         session_info: &'a perf_session::PerfSessionInfo,
@@ -363,6 +379,7 @@ impl<'a> PerfSampleEventInfo<'a> {
     }
 
     /// Gets the event's name, e.g. "sched:sched_switch".
+    ///
     /// - If name is available from `PERF_HEADER_EVENT_DESC`, return it.
     /// - Otherwise, if name is available from format, return it.
     /// - Otherwise, return empty string.
@@ -370,7 +387,22 @@ impl<'a> PerfSampleEventInfo<'a> {
         self.event_desc.name()
     }
 
-    /// Gets the event's `time` as a [`PerfTimeSpec`], using offset information from `session_info`.
+    /// Gets a `Display` object for a JSON-escaped event name, e.g. `sched:sched_switch`.
+    ///
+    /// - If name is available from `PERF_HEADER_EVENT_DESC`, return it.
+    /// - Otherwise, if name is available from format, return it.
+    /// - Otherwise, return empty string.
+    ///
+    /// The returned `Display` object can be used with format macros like `write!` or
+    /// `println!` to write the name as a JSON-escaped string. This returns the same
+    /// value as the [PerfSampleEventInfo::name] method, but as a Display object (can
+    /// be passed to a format macro) and with JSON escaping applied (control chars,
+    /// quotes, and backslashes are escaped)
+    pub fn json_name_display(&self) -> display::JsonEscapeDisplay {
+        display::JsonEscapeDisplay::new(self.name())
+    }
+
+    /// Gets the event's `time` as a [`crate::PerfTimeSpec`], using offset information from `session_info`.
     pub const fn time_spec(&self) -> perf_session::PerfTimeSpec {
         self.session_info.time_to_time_spec(self.time)
     }
@@ -422,13 +454,13 @@ impl<'a> PerfSampleEventInfo<'a> {
     /// The returned formatter writes event metadata as a comma-separated list of 0 or more
     /// JSON name-value pairs, e.g. `"time": "...", "cpu": 3` (including the quotation marks).
     ///
-    /// The included items default to [`PerfMetaOptions::Default`], but can be customized with
+    /// The included items default to [`crate::PerfMetaOptions::Default`], but can be customized with
     /// the `meta_options()` property.
     ///
     /// One name-value pair is appended for each metadata item that is both requested
     /// by `meta_options` and has a meaningful value available in the event. For example,
     /// the "cpu" metadata item is only appended if the event has a non-zero `Cpu` value,
-    /// even if the `meta_options` property includes [`PerfMetaOptions::Cpu`].
+    /// even if the `meta_options` property includes [`crate::PerfMetaOptions::Cpu`].
     ///
     /// The following metadata items are supported:
     ///

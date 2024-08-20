@@ -20,6 +20,7 @@ use std::str;
 use std::vec;
 
 use tracepoint_decode as td;
+use tracepoint_decode::EventHeaderEnumeratorContext;
 
 fn main() -> process::ExitCode {
     let mut result = process::ExitCode::SUCCESS;
@@ -81,7 +82,11 @@ fn print_events_from_dat_file(filename: &str, file_bytes: &[u8]) -> bool {
         // Begin enumeration by calling `enumerator_context.enumerate()` with the tracepoint
         // name (e.g. "MyEvent_L1K1") and the event data (the "user" data of the event, starting
         // immediately after the common fields).
-        match enumerator_context.enumerate(tracepoint_name, event_data) {
+        match enumerator_context.enumerate_with_name_and_data(
+            tracepoint_name,
+            event_data,
+            EventHeaderEnumeratorContext::MOVE_NEXT_LIMIT_DEFAULT,
+        ) {
             Err(e) => {
                 // Header of the event was invalid.
                 eprintln!(
@@ -102,7 +107,7 @@ fn print_events_from_dat_file(filename: &str, file_bytes: &[u8]) -> bool {
                 println!(
                     "- {} {{ {} }}",
                     event_info.identity_display(), // "ProviderName:EventName"
-                    event_info.json_meta_display(), // Various event attributes, formatted as JSON.
+                    event_info.json_meta_display(None), // Various event attributes, formatted as JSON.
                 );
 
                 // The enumerator starts at position before-first-item. If there are no fields,
@@ -120,7 +125,11 @@ fn print_events_from_dat_file(filename: &str, file_bytes: &[u8]) -> bool {
                     match enumerator.state() {
                         td::EventHeaderEnumeratorState::Value => {
                             // This is a scalar field.
-                            println!("  - {} = {}", item_info.name_display(), item_value);
+                            println!(
+                                "  - {} = {}",
+                                item_info.name_display(),
+                                item_value.display()
+                            );
 
                             // You could also use methods on the `item_value` to do things like:
                             // - Determine the value type, e.g. u32, uuid, utf-8 string.
@@ -148,7 +157,7 @@ fn print_events_from_dat_file(filename: &str, file_bytes: &[u8]) -> bool {
                                 td::PerfConvertOptions::Default
                                     .and_not(td::PerfConvertOptions::RootName);
                             enumerator
-                                .write_item_and_move_next_sibling(
+                                .write_json_item_and_move_next_sibling(
                                     &mut value_json,
                                     false,
                                     CONVERT_OPTIONS,

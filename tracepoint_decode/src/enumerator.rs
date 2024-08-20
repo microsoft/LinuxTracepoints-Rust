@@ -11,8 +11,10 @@ use crate::display;
 use crate::writers;
 use crate::PerfByteReader;
 use crate::PerfConvertOptions;
+use crate::PerfEventDecodingStyle;
 use crate::PerfItemMetadata;
 use crate::PerfItemValue;
+use crate::PerfSampleEventInfo;
 
 #[derive(Clone, Copy, Debug)]
 enum SubState {
@@ -113,6 +115,10 @@ pub enum EventHeaderEnumeratorError {
 
     /// Event has more than 8 levels of nested structs.
     StackOverflow,
+
+    /// Returned by `enumerate` if the provided `sample_event_info` has no format
+    /// information or if the decoding style is not [`PerfEventDecodingStyle::EventHeader`].
+    NotEventHeader,
 }
 
 impl fmt::Display for EventHeaderEnumeratorError {
@@ -124,6 +130,7 @@ impl fmt::Display for EventHeaderEnumeratorError {
             EventHeaderEnumeratorError::ImplementationLimit => "ImplementationLimit",
             EventHeaderEnumeratorError::InvalidData => "InvalidData",
             EventHeaderEnumeratorError::StackOverflow => "StackOverflow",
+            EventHeaderEnumeratorError::NotEventHeader => "NotEventHeader",
         };
         return f.pad(text);
     }
@@ -213,39 +220,42 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
     /// Returns the `tracepoint_name` that was passed to
     /// `context.enumerate(tracepoint_name, event_data)`, e.g. "ProviderName_L1K2".
     pub fn tracepoint_name(&self) -> &'nam str {
-        return self.tracepoint_name;
+        self.tracepoint_name
     }
 
     /// Returns the `event_data` that was passed to
     /// `context.enumerate(tracepoint_name, event_data)`.
     pub fn event_data(&self) -> &'dat [u8] {
-        return self.event_data;
+        self.event_data
     }
 
     /// Returns a formatter for the event's identity, i.e. writes `ProviderName:EventName`.
     pub fn identity_display(&self) -> display::EventHeaderIdentityDisplay<'nam, 'dat> {
-        return display::EventHeaderIdentityDisplay::new(self.provider_name(), self.name_bytes());
+        display::EventHeaderIdentityDisplay::new(self.provider_name(), self.name_bytes())
     }
 
     /// Returns a formatter for the event's identity, i.e. writes `ProviderName:EventName`.
     /// If the output includes any control chars, quotes, or backslashes, they will be
     /// escaped using JSON string escape rules.
     pub fn json_identity_display(&self) -> display::EventHeaderIdentityDisplay<'nam, 'dat> {
-        return display::EventHeaderIdentityDisplay::new(self.provider_name(), self.name_bytes());
+        display::EventHeaderIdentityDisplay::new(self.provider_name(), self.name_bytes())
     }
 
     /// Returns a formatter for the event's "meta" suffix.
     ///
+    /// If the `sample_event_info` parameter is `Some`, the formatter will append metadata items
+    /// from [`PerfSampleEventInfo::json_meta_display`] in addition to the EventHeader metadata.
+    ///
     /// The returned formatter writes event metadata as a comma-separated list of 0 or more
     /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
     ///
-    /// The included items default to [`PerfMetaOptions::Default`], but can be customized with
+    /// The included items default to [`crate::PerfMetaOptions::Default`], but can be customized with
     /// the `meta_options()` property.
     ///
     /// One name-value pair is appended for each metadata item that is both requested
     /// by `meta_options` and has a meaningful value available in the event. For example,
     /// the "id" metadata item is only appended if the event has a non-zero `Id` value,
-    /// even if the `meta_options` property includes [`PerfMetaOptions::Id`].
+    /// even if the `meta_options` property includes [`crate::PerfMetaOptions::Id`].
     ///
     /// The following metadata items are supported:
     ///
@@ -261,8 +271,11 @@ impl<'nam, 'dat> EventHeaderEventInfo<'nam, 'dat> {
     /// - `"relatedActivity": "12345678-1234-1234-1234-1234567890AB"` (omitted if not present)
     /// - `"options": "Gmygroup"` (omitted if not present, off by default)
     /// - `"flags": "0x7"` (omitted if zero, off by default)
-    pub fn json_meta_display(&self) -> display::EventHeaderJsonMetaDisplay {
-        return display::EventHeaderJsonMetaDisplay::new(self);
+    pub fn json_meta_display<'inf>(
+        &'inf self,
+        sample_event_info: Option<&'inf PerfSampleEventInfo>,
+    ) -> display::EventHeaderJsonMetaDisplay<'inf> {
+        return display::EventHeaderJsonMetaDisplay::new(self, sample_event_info);
     }
 
     /// Returns the offset into `event_data` where the event name starts.
@@ -633,7 +646,7 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     /// `"MyField": "My Value"` (including the quotation marks), or for state
     /// [`EventHeaderEnumeratorState::ArrayBegin`] this might generate
     /// `"MyField": [ 1, 2, 3 ]`. Consumes the current item and its descendents as if
-    /// by a call to `move_next_sibling`.
+    /// by a call to [`EventHeaderEnumerator::move_next_sibling`].
     ///
     /// Returns true if a comma would be needed before subsequent JSON output, i.e. if
     /// anything was written OR if `add_comma_before_first_item` was true.
@@ -676,13 +689,13 @@ impl<'ctx, 'nam, 'dat> EventHeaderEnumerator<'ctx, 'nam, 'dat> {
     /// - [`EventHeaderEnumeratorState::ArrayEnd`], [`EventHeaderEnumeratorState::StructEnd`]
     ///
     ///   Unspecified behavior.
-    pub fn write_item_and_move_next_sibling<W: fmt::Write + ?Sized>(
+    pub fn write_json_item_and_move_next_sibling<W: fmt::Write + ?Sized>(
         &mut self,
         writer: &mut W,
         add_comma_before_first_item: bool,
         convert_options: PerfConvertOptions,
     ) -> Result<bool, fmt::Error> {
-        return self.context.write_item_and_move_next_sibling_impl(
+        return self.context.write_json_item_and_move_next_sibling_impl(
             self.event_data,
             writer,
             add_comma_before_first_item,
@@ -774,27 +787,53 @@ impl EventHeaderEnumeratorContext {
         };
     }
 
-    /// Enumerates the fields of an EventHeader event. Returns an enumerator for the event.
+    /// Begins enumeration of the fields of an EventHeader event. Returns an enumerator for
+    /// the event.
     ///
-    /// - `tracepoint_name` is the name of the tracepoint, e.g. "ProviderName_L1K2".
-    /// - `event_data` is the event's user data, starting with the `eventheader_flags` field
-    ///   (i.e. starting immediately after the event's common fields).
+    /// If the event has EventHeader-style decoding information, this is the same as
+    /// `enumerate_with_name_and_data(sample_event_info.format().name(), sample_event_info.user_data(), MOVE_NEXT_LIMIT_DEFAULT)`.
+    ///
+    /// If the event does not have EventHeader-style decoding, this returns `Err(NotEventHeader)`.
     ///
     /// Returns an enumerator for the event, positioned before the first item, with the
     /// move_next limit set to `MOVE_NEXT_LIMIT_DEFAULT`.
-    pub fn enumerate<'ctx, 'nam, 'dat>(
+    pub fn enumerate<'ctx, 'dat>(
         &'ctx mut self,
-        tracepoint_name: &'nam str,
-        event_data: &'dat [u8],
-    ) -> Result<EventHeaderEnumerator<'ctx, 'nam, 'dat>, EventHeaderEnumeratorError> {
-        return self.enumerate_with_limit(
-            tracepoint_name,
-            event_data,
-            Self::MOVE_NEXT_LIMIT_DEFAULT,
-        );
+        sample_event_info: &'dat PerfSampleEventInfo<'dat>,
+    ) -> Result<EventHeaderEnumerator<'ctx, 'dat, 'dat>, EventHeaderEnumeratorError> {
+        self.enumerate_with_limit(sample_event_info, Self::MOVE_NEXT_LIMIT_DEFAULT)
     }
 
-    /// Enumerates the fields of an EventHeader event. Returns an enumerator for the event.
+    /// Begins enumeration of the fields of an EventHeader event. Returns an enumerator for
+    /// the event.
+    ///
+    /// If the event has EventHeader-style decoding information, this is the same as
+    /// `enumerate_with_name_and_data(sample_event_info.format().name(), sample_event_info.user_data(), move_next_limit)`.
+    ///
+    /// If the event does not have EventHeader-style decoding, this returns `Err(NotEventHeader)`.
+    ///
+    /// Returns an enumerator for the event, positioned before the first item, with the
+    /// move_next limit set to `move_next_limit`.
+    pub fn enumerate_with_limit<'ctx, 'dat>(
+        &'ctx mut self,
+        sample_event_info: &'dat PerfSampleEventInfo<'dat>,
+        move_next_limit: u32,
+    ) -> Result<EventHeaderEnumerator<'ctx, 'dat, 'dat>, EventHeaderEnumeratorError> {
+        if let Some(format) = sample_event_info.format() {
+            if format.decoding_style() == PerfEventDecodingStyle::EventHeader {
+                return self.enumerate_with_name_and_data(
+                    format.name(),
+                    sample_event_info.user_data(),
+                    move_next_limit,
+                );
+            }
+        }
+
+        return Err(EventHeaderEnumeratorError::NotEventHeader);
+    }
+
+    /// Begins enumeration of the fields of an EventHeader event. Returns an enumerator for
+    /// the event.
     ///
     /// - `tracepoint_name` is the name of the tracepoint, e.g. "ProviderName_L1K2".
     /// - `event_data` is the event's user data, starting with the `eventheader_flags` field
@@ -805,7 +844,7 @@ impl EventHeaderEnumeratorContext {
     ///
     /// Returns an enumerator for the event, positioned before the first item, with the
     /// move_next limit set to `move_next_limit`.
-    pub fn enumerate_with_limit<'ctx, 'nam, 'dat>(
+    pub fn enumerate_with_name_and_data<'ctx, 'nam, 'dat>(
         &'ctx mut self,
         tracepoint_name: &'nam str,
         event_data: &'dat [u8],
@@ -1313,7 +1352,7 @@ impl EventHeaderEnumeratorContext {
         return moved_to_item;
     }
 
-    fn write_item_and_move_next_sibling_impl<W: fmt::Write + ?Sized>(
+    fn write_json_item_and_move_next_sibling_impl<W: fmt::Write + ?Sized>(
         &mut self,
         event_data: &[u8],
         writer: &mut W,
@@ -1959,7 +1998,11 @@ mod tests {
             let tracepoint_name =
                 std::str::from_utf8(&dat_bytes[name_pos..name_pos + name_len]).unwrap();
             let event_data = &dat_bytes[name_pos + name_len + 1..dat_pos];
-            match ctx.enumerate(tracepoint_name, event_data) {
+            match ctx.enumerate_with_name_and_data(
+                tracepoint_name,
+                event_data,
+                EventHeaderEnumeratorContext::MOVE_NEXT_LIMIT_DEFAULT,
+            ) {
                 Err(e) => {
                     json.write_newline_before_value(1)?;
                     json.write_object_begin()?;
@@ -1981,7 +2024,7 @@ mod tests {
 
                     if Method::WriteItem == method {
                         tmp_str.clear();
-                        if e.write_item_and_move_next_sibling(tmp_str, false, OPTIONS)? {
+                        if e.write_json_item_and_move_next_sibling(tmp_str, false, OPTIONS)? {
                             json.write_value(|w| w.write_display_with_no_filter(&tmp_str))?;
                         }
                     } else if e.move_next() {
@@ -2039,7 +2082,9 @@ mod tests {
 
                     json.write_property_name_json_safe("meta")?;
                     json.write_object_begin()?;
-                    json.write_value(|w| w.write_display_with_no_filter(ei.json_meta_display()))?;
+                    json.write_value(|w| {
+                        w.write_display_with_no_filter(ei.json_meta_display(None))
+                    })?;
                     json.write_object_end()?;
 
                     json.write_object_end()?;

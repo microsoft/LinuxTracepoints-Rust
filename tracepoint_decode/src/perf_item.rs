@@ -107,14 +107,14 @@ impl PerfConvertOptions {
     /// No flags set.
     pub const None: Self = Self(0);
 
-    /// Add spaces to the output, e.g. "Name": [ 1, 2, 3 ] instead of "Name":[1,2,3].
+    /// Add spaces to the output, e.g. `"Name": [ 1, 2, 3 ]` instead of `"Name":[1,2,3]`.
     pub const Space: Self = Self(0x01);
 
-    /// When formatting with AppendJsonItemToAndMoveNextSibling, include the
+    /// When formatting with `write_item_and_move_next_sibling`, include the
     /// "Name": prefix for the root item.
     pub const RootName: Self = Self(0x02);
 
-    /// When formatting with AppendJsonItemToAndMoveNextSibling, for items with a
+    /// When formatting with `write_item_and_move_next_sibling`, for items with a
     /// non-zero tag, add a tag suffix to the item's "Name": prefix, e.g.
     /// "Name;tag=0xNNNN": "ItemValue".
     pub const FieldTag: Self = Self(0x04);
@@ -212,6 +212,11 @@ impl PerfMetaOptions {
     /// Returns `self & flag`.
     pub const fn and(self, flag: Self) -> Self {
         return Self(self.0 & flag.0);
+    }
+
+    /// Returns `self & !flag`.
+    pub const fn and_not(self, flag: Self) -> Self {
+        return Self(self.0 & !flag.0);
     }
 
     /// Returns `self | flag`.
@@ -601,7 +606,7 @@ pub struct PerfItemValue<'dat> {
 
 impl<'dat> PerfItemValue<'dat> {
     /// Initializes a new instance of the `PerfItemValue` struct.
-    /// These are not normally created directly. You'll normally get instances of this struct from
+    /// These are not normally created directly. You'll usually get instances of this struct from
     /// [`EventHeaderEnumerator`]`.item_info()`.
     pub const fn new(bytes: &'dat [u8], metadata: PerfItemMetadata) -> Self {
         #[cfg(debug_assertions)]
@@ -890,6 +895,16 @@ impl<'dat> PerfItemValue<'dat> {
         return result;
     }
 
+    /// Returns a display object that can be used with `write!` or `format!` macros
+    /// to format the item's value as text. The output is the same as with
+    /// [`PerfItemValue::write_to`].
+    ///
+    /// For example, `write!(writer, "{}", value.display())` might generate a string
+    /// like `53`, `true`, `Hello`, or `1, 2, 3`.
+    pub fn display(&self) -> display::PerfItemValueDisplay {
+        return display::PerfItemValueDisplay::new(self);
+    }
+
     /// Writes a string representation of this value to the writer.
     ///
     /// If this value is a scalar, this behaves like `write_scalar_to`.
@@ -1169,6 +1184,16 @@ impl<'dat> PerfItemValue<'dat> {
         }
 
         return Ok(());
+    }
+
+    /// Returns a display object that can be used with `write!` or `format!` macros
+    /// to format the item's value as JSON. The output is the same as with
+    /// [`PerfItemValue::write_json_to`].
+    ///
+    /// For example, `write!(str, "{}", value.json_display())` might generate a string
+    /// like `53`, `true`, `"Hello"`, or `[1, 2, 3]`.
+    pub fn json_display(&self) -> display::PerfItemValueJsonDisplay {
+        return display::PerfItemValueJsonDisplay::new(self);
     }
 
     /// Writes a JSON representation of this value to the writer.
@@ -1700,18 +1725,5 @@ impl<'dat> PerfItemValue<'dat> {
         }
 
         return writer.write_quoted(|w| w.write_with_json_escape(bytes, encoding));
-    }
-}
-
-impl fmt::Display for PerfItemValue<'_> {
-    /// Writes a string representation of this value to the formatter.
-    /// - Normal formatting is the same as `write_to` with [`PerfConvertOptions::Default`].
-    /// - Alternate formatting is the same as `write_json_to` with [`PerfConvertOptions::Default`].
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        return if f.alternate() {
-            self.write_json_to(f, PerfConvertOptions::Default)
-        } else {
-            self.write_to(f, PerfConvertOptions::Default)
-        };
     }
 }

@@ -14,7 +14,9 @@ use crate::enumerator;
 use crate::filters;
 use crate::filters::Filter;
 use crate::perf_abi;
+use crate::perf_event_data;
 use crate::perf_event_desc;
+use crate::perf_item;
 use crate::perf_session;
 use crate::writers;
 
@@ -208,22 +210,95 @@ impl<'nam, 'dat> fmt::Display for EventHeaderJsonIdentityDisplay<'nam, 'dat> {
     }
 }
 
+/// Text formatter for the value of a [`crate::PerfItemValue`].
+/// This formats the value using `value.write_to()`.
+pub struct PerfItemValueDisplay<'dat> {
+    value: &'dat perf_item::PerfItemValue<'dat>,
+    convert_options: PerfConvertOptions,
+}
+
+impl<'dat> PerfItemValueDisplay<'dat> {
+    /// Creates a new formatter for the specified value.
+    pub fn new(value: &'dat perf_item::PerfItemValue<'dat>) -> Self {
+        return Self {
+            value,
+            convert_options: PerfConvertOptions::Default,
+        };
+    }
+
+    /// Configures the conversion options. The default value is [`PerfConvertOptions::Default`].
+    pub fn convert_options(&mut self, value: PerfConvertOptions) -> &mut Self {
+        self.convert_options = value;
+        return self;
+    }
+
+    /// Writes the value to the specified writer.
+    pub fn write_to<W: fmt::Write + ?Sized>(&self, writer: &mut W) -> fmt::Result {
+        self.value.write_to(writer, self.convert_options)
+    }
+}
+
+impl<'dat> fmt::Display for PerfItemValueDisplay<'dat> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+        self.value.write_to(f, self.convert_options)
+    }
+}
+
+/// JSON formatter for the value of a [`crate::PerfItemValue`].
+/// This formats the value using `value.write_json_to()`.
+pub struct PerfItemValueJsonDisplay<'dat> {
+    value: &'dat perf_item::PerfItemValue<'dat>,
+    convert_options: PerfConvertOptions,
+}
+
+impl<'dat> PerfItemValueJsonDisplay<'dat> {
+    /// Creates a new formatter for the specified value.
+    pub fn new(value: &'dat perf_item::PerfItemValue<'dat>) -> Self {
+        return Self {
+            value,
+            convert_options: PerfConvertOptions::Default,
+        };
+    }
+
+    /// Configures the conversion options. The default value is [`PerfConvertOptions::Default`].
+    pub fn convert_options(&mut self, value: PerfConvertOptions) -> &mut Self {
+        self.convert_options = value;
+        return self;
+    }
+
+    /// Writes the value to the specified writer.
+    pub fn write_to<W: fmt::Write + ?Sized>(&self, writer: &mut W) -> fmt::Result {
+        self.value.write_json_to(writer, self.convert_options)
+    }
+}
+
+impl<'dat> fmt::Display for PerfItemValueJsonDisplay<'dat> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+        self.value.write_json_to(f, self.convert_options)
+    }
+}
+
 /// Formatter for the "meta" suffix of an EventHeader event, i.e. `"level": 5, "keyword": 3`.
 ///
 /// Instances of this type are returned by the
 /// [`crate::EventHeaderEventInfo::json_meta_display`] method.
 #[derive(Debug)]
 pub struct EventHeaderJsonMetaDisplay<'inf> {
-    event_info: &'inf enumerator::EventHeaderEventInfo<'inf, 'inf>,
+    eh_event_info: &'inf enumerator::EventHeaderEventInfo<'inf, 'inf>,
+    sample_event_info: Option<&'inf perf_event_data::PerfSampleEventInfo<'inf>>,
     add_comma_before_first_item: bool,
     meta_options: PerfMetaOptions,
     convert_options: PerfConvertOptions,
 }
 
 impl<'inf> EventHeaderJsonMetaDisplay<'inf> {
-    pub(crate) fn new(event_info: &'inf enumerator::EventHeaderEventInfo<'inf, 'inf>) -> Self {
+    pub(crate) fn new(
+        eh_event_info: &'inf enumerator::EventHeaderEventInfo<'inf, 'inf>,
+        sample_event_info: Option<&'inf perf_event_data::PerfSampleEventInfo<'inf>>,
+    ) -> Self {
         return Self {
-            event_info,
+            eh_event_info,
+            sample_event_info,
             add_comma_before_first_item: false,
             meta_options: PerfMetaOptions::Default,
             convert_options: PerfConvertOptions::Default,
@@ -256,11 +331,27 @@ impl<'inf> EventHeaderJsonMetaDisplay<'inf> {
     /// JSON name-value pairs, e.g. `"level": 5, "keyword": 3` (including the quotation marks).
     /// Returns true if any items were written, false if nothing was written.
     pub fn write_to<W: fmt::Write + ?Sized>(&self, w: &mut W) -> Result<bool, fmt::Error> {
-        let mut json =
-            writers::JsonWriter::new(w, self.convert_options, self.add_comma_before_first_item);
-        let mut any_written = false;
+        let mut any_written = if let Some(sample_event_info) = self.sample_event_info {
+            sample_event_info
+                .json_meta_display()
+                .add_comma_before_first_item(self.add_comma_before_first_item)
+                .meta_options(
+                    self.meta_options
+                        .and_not(PerfMetaOptions::Provider.or(PerfMetaOptions::Event)),
+                )
+                .convert_options(self.convert_options)
+                .write_to(w)?
+        } else {
+            false
+        };
 
-        let tracepoint_name = self.event_info.tracepoint_name();
+        let mut json = writers::JsonWriter::new(
+            w,
+            self.convert_options,
+            any_written || self.add_comma_before_first_item,
+        );
+
+        let tracepoint_name = self.eh_event_info.tracepoint_name();
         let provider_name_end = if self
             .meta_options
             .has_flag(PerfMetaOptions::Provider.or(PerfMetaOptions::Options))
@@ -283,65 +374,69 @@ impl<'inf> EventHeaderJsonMetaDisplay<'inf> {
             any_written = true;
             json.write_property_name_json_safe("event")?;
             json.write_value_quoted(|w| {
-                w.write_utf8_with_json_escape(self.event_info.name_bytes())
+                w.write_utf8_with_json_escape(self.eh_event_info.name_bytes())
             })?;
         }
 
-        if self.meta_options.has_flag(PerfMetaOptions::Id) && self.event_info.header().id != 0 {
+        if self.meta_options.has_flag(PerfMetaOptions::Id) && self.eh_event_info.header().id != 0 {
             any_written = true;
             json.write_property_name_json_safe("id")?;
-            json.write_value(|w| w.write_display_with_no_filter(self.event_info.header().id))?;
+            json.write_value(|w| w.write_display_with_no_filter(self.eh_event_info.header().id))?;
         }
 
         if self.meta_options.has_flag(PerfMetaOptions::Version)
-            && self.event_info.header().version != 0
+            && self.eh_event_info.header().version != 0
         {
             any_written = true;
             json.write_property_name_json_safe("version")?;
-            json.write_value(|w| w.write_display_with_no_filter(self.event_info.header().version))?;
+            json.write_value(|w| {
+                w.write_display_with_no_filter(self.eh_event_info.header().version)
+            })?;
         }
 
         if self.meta_options.has_flag(PerfMetaOptions::Level)
-            && self.event_info.header().level != Level::Invalid
+            && self.eh_event_info.header().level != Level::Invalid
         {
             any_written = true;
             json.write_property_name_json_safe("level")?;
             json.write_value(|w| {
-                w.write_display_with_no_filter(self.event_info.header().level.as_int())
+                w.write_display_with_no_filter(self.eh_event_info.header().level.as_int())
             })?;
         }
 
-        if self.meta_options.has_flag(PerfMetaOptions::Keyword) && self.event_info.keyword() != 0 {
+        if self.meta_options.has_flag(PerfMetaOptions::Keyword) && self.eh_event_info.keyword() != 0
+        {
             any_written = true;
             json.write_property_name_json_safe("keyword")?;
-            json.write_value(|w| w.write_json_hex64(self.event_info.keyword()))?;
+            json.write_value(|w| w.write_json_hex64(self.eh_event_info.keyword()))?;
         }
 
         if self.meta_options.has_flag(PerfMetaOptions::Opcode)
-            && self.event_info.header().opcode != Opcode::Info
+            && self.eh_event_info.header().opcode != Opcode::Info
         {
             any_written = true;
             json.write_property_name_json_safe("opcode")?;
             json.write_value(|w| {
-                w.write_display_with_no_filter(self.event_info.header().opcode.as_int())
+                w.write_display_with_no_filter(self.eh_event_info.header().opcode.as_int())
             })?;
         }
 
-        if self.meta_options.has_flag(PerfMetaOptions::Tag) && self.event_info.header().tag != 0 {
+        if self.meta_options.has_flag(PerfMetaOptions::Tag) && self.eh_event_info.header().tag != 0
+        {
             any_written = true;
             json.write_property_name_json_safe("tag")?;
-            json.write_value(|w| w.write_json_hex32(self.event_info.header().tag as u32))?;
+            json.write_value(|w| w.write_json_hex32(self.eh_event_info.header().tag as u32))?;
         }
 
         if self.meta_options.has_flag(PerfMetaOptions::Activity)
-            && self.event_info.activity_id_len() >= 16
+            && self.eh_event_info.activity_id_len() >= 16
         {
             any_written = true;
             json.write_property_name_json_safe("activity")?;
-            let start = self.event_info.activity_id_start() as usize;
+            let start = self.eh_event_info.activity_id_start() as usize;
             json.write_value_quoted(|w| {
                 w.write_uuid(
-                    &self.event_info.event_data()[start..start + 16]
+                    &self.eh_event_info.event_data()[start..start + 16]
                         .try_into()
                         .unwrap(),
                 )
@@ -349,14 +444,14 @@ impl<'inf> EventHeaderJsonMetaDisplay<'inf> {
         }
 
         if self.meta_options.has_flag(PerfMetaOptions::RelatedActivity)
-            && self.event_info.activity_id_len() >= 32
+            && self.eh_event_info.activity_id_len() >= 32
         {
             any_written = true;
             json.write_property_name_json_safe("relatedActivity")?;
-            let start = self.event_info.activity_id_start() as usize + 16;
+            let start = self.eh_event_info.activity_id_start() as usize + 16;
             json.write_value_quoted(|w| {
                 w.write_uuid(
-                    &self.event_info.event_data()[start..start + 16]
+                    &self.eh_event_info.event_data()[start..start + 16]
                         .try_into()
                         .unwrap(),
                 )
@@ -384,7 +479,7 @@ impl<'inf> EventHeaderJsonMetaDisplay<'inf> {
             any_written = true;
             json.write_property_name_json_safe("flags")?;
             json.write_value(|w| {
-                w.write_json_hex32(self.event_info.header().flags.as_int() as u32)
+                w.write_json_hex32(self.eh_event_info.header().flags.as_int() as u32)
             })?;
         }
 
@@ -393,7 +488,7 @@ impl<'inf> EventHeaderJsonMetaDisplay<'inf> {
 }
 
 impl<'inf> fmt::Display for EventHeaderJsonMetaDisplay<'inf> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.write_to(f)?;
         return Ok(());
     }
@@ -565,7 +660,7 @@ impl<'a> EventInfoJsonMetaDisplay<'a> {
 }
 
 impl<'a> fmt::Display for EventInfoJsonMetaDisplay<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.write_to(f)?;
         return Ok(());
     }

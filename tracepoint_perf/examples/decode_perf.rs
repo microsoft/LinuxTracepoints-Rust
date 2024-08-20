@@ -30,7 +30,7 @@ fn main() -> process::ExitCode {
         return usage();
     }
 
-    // A reader can be reused for multiple files.
+    // A reader can be used for multiple files.
     let mut reader = tp::PerfDataFileReader::new();
 
     // An enumerator context can be used for multiple events.
@@ -64,8 +64,8 @@ fn main() -> process::ExitCode {
 
             let event = reader.current_event();
             if event.header.ty != td::PerfEventHeaderType::Sample {
-                // Non-sample event, typically information about the system or information
-                // about the trace itself.
+                // Non-sample event, typically contains information about the system or
+                // information about the trace itself.
 
                 // Event info (timestamp, cpu, pid, etc.) may be available.
                 let nonsample_event_info = reader.get_non_sample_event_info(&event);
@@ -102,81 +102,61 @@ fn main() -> process::ExitCode {
                 println!("Sample: {}", sample_event_info.name());
                 println!("  size = {}", event.header.size);
 
-                // Found event info (attributes). Include data from it in the output.
+                if let Ok(mut enumerator) = enumerator_ctx.enumerate(&sample_event_info) {
+                    // Decode using EventHeader metadata.
 
-                if let Some(event_format) = sample_event_info.format() {
-                    let enumerator = if event_format.decoding_style()
-                        != td::PerfEventDecodingStyle::EventHeader
-                    {
-                        Err(td::EventHeaderEnumeratorError::Success)
-                    } else {
-                        // Decode using EventHeader metadata.
-                        enumerator_ctx.enumerate(event_format.name(), sample_event_info.user_data())
-                    };
+                    // event_info has a bunch of information about the event.
+                    let eh_event_info = enumerator.event_info();
 
-                    if let Ok(mut enumerator) = enumerator {
-                        // Decode using EventHeader metadata.
+                    // Add the EventHeader-specific info.
+                    println!(
+                        "  info = {{ {} }}",
+                        &eh_event_info.json_meta_display(Some(&sample_event_info))
+                    );
 
-                        // event_info has a bunch of information about the event.
-                        let eh_event_info = enumerator.event_info();
+                    // Transition past the initial BeforeFirstItem state. Otherwise, the
+                    // first `write_json_item_and_move_next_sibling` would consume the entire event.
+                    enumerator.move_next();
 
-                        // Add the EventHeader-specific info.
+                    // This will loop once for each top-level item in the event.
+                    while enumerator.state() >= td::EventHeaderEnumeratorState::BeforeFirstItem {
+                        let item_info = enumerator.item_info(); // Information about the item.
+
+                        // item_info.value has lots of properties and methods for accessing its data in different
+                        // formats, but they only work for simple values -- scalar, array element, or array of
+                        // fixed-size elements. For complex values such as structs or arrays of variable-size
+                        // elements, you need to use the enumerator to access the sub-items.
+
+                        // In this example, we use the enumerator to convert the current item to a JSON-formatted string.
+                        // In the case of a simple item, it will be the same as `item_info.value().write_json_scalar_to()`.
+                        // In the case of a complex item, it will recursively format the item and its sub-items.
                         json_buf.clear();
-                        _ = sample_event_info
-                            .json_meta_display()
-                            .write_to(&mut json_buf);
-                        _ = eh_event_info
-                            .json_meta_display()
-                            .add_comma_before_first_item(!json_buf.is_empty())
-                            .write_to(&mut json_buf);
-                        println!("  info = {{ {} }}", json_buf);
+                        _ = enumerator.write_json_item_and_move_next_sibling(
+                            &mut json_buf, // fmt::Write works here, but io::Write doesn't. Use a String as a buffer.
+                            false,         // Don't put a ',' before the item.
+                            td::PerfConvertOptions::Default
+                                .and_not(td::PerfConvertOptions::RootName), // Don't include a JSON "ItemName": prefix.
+                        );
+                        println!("  {} = {}", item_info.name_and_tag_display(), json_buf);
+                    }
 
-                        // Transition past the initial BeforeFirstItem state.
-                        enumerator.move_next();
+                    if enumerator.state() == td::EventHeaderEnumeratorState::Error {
+                        // Unexpected: Error decoding event.
+                        println!("  MoveNext error: {}", enumerator.last_error());
+                    }
+                } else if let Some(event_format) = sample_event_info.format() {
+                    // Decode using TraceFS format metadata.
+                    println!("  info = {{ {} }}", sample_event_info.json_meta_display());
 
-                        // This will loop once for each top-level item in the event.
-                        while enumerator.state() >= td::EventHeaderEnumeratorState::BeforeFirstItem
-                        {
-                            let item_info = enumerator.item_info(); // Information about the item.
+                    // Typically the "common" fields are not interesting, so skip them.
+                    let skip_fields = event_format.common_field_count();
+                    for field_format in event_format.fields().iter().skip(skip_fields) {
+                        let field_value = field_format.get_field_value(&sample_event_info);
 
-                            // item_info.value has lots of properties and methods for accessing its data in different
-                            // formats, but they only work for simple values -- scalar, array element, or array of
-                            // fixed-size elements. For complex values such as structs or arrays of variable-size
-                            // elements, you need to use the enumerator to access the sub-items. In this example,
-                            // we use the enumerator to convert the current item to a JSON-formatted string.
-                            // In the case of a simple item, it will be the same as `item_info.value().write_json_scalar_to()`.
-                            // In the case of a complex item, it will recursively format the item and its sub-items.
-                            json_buf.clear();
-                            _ = enumerator.write_item_and_move_next_sibling(
-                                &mut json_buf,
-                                false,
-                                td::PerfConvertOptions::Default
-                                    .and_not(td::PerfConvertOptions::RootName), // We don't want a JSON "ItemName": prefix.
-                            );
-                            println!("  {} = {}", item_info.name_and_tag_display(), json_buf);
-                        }
-
-                        if enumerator.state() == td::EventHeaderEnumeratorState::Error {
-                            // Unexpected: Error decoding event.
-                            println!("  MoveNext error: {}", enumerator.last_error());
-                        }
-                    } else {
-                        // Decode using TraceFS format metadata.
-                        println!("  info = {{ {} }}", sample_event_info.json_meta_display());
-
-                        // Typically the "common" fields are not interesting, so skip them.
-                        let skip_fields = event_format.common_field_count();
-                        for field_format in event_format.fields().iter().skip(skip_fields) {
-                            let field_value = field_format.get_field_value(
-                                sample_event_info.raw_data(),
-                                sample_event_info.byte_reader(),
-                            );
-
-                            // field_value has lots of properties and methods for accessing its data in different
-                            // formats. TraceFS fields are always scalars or arrays of fixed-size elements, so
-                            // the following will work to get the data as a JSON value.
-                            println!("  {} = {:#}", field_format.name(), field_value);
-                        }
+                        // field_value has lots of properties and methods for accessing its data in different
+                        // formats. TraceFS fields are always scalars or arrays of fixed-size elements, so
+                        // the following will work to get the data as a string value.
+                        println!("  {} = {}", field_format.name(), field_value.display());
                     }
                 } else {
                     // Unexpected: Did not find TraceFS format metadata for this event.

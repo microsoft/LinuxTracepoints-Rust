@@ -980,8 +980,8 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
 
     /// Writes an `f32`, respecting [`PerfConvertOptions::FloatExtraPrecision`] flag.
     pub fn write_float32(&mut self, value: f32) -> fmt::Result {
-        let value_pos = if value >= 0.0 { value } else { -value };
-        let e = value_pos >= 1.0e+9 || (value_pos != 0.0 && value_pos < 1.0e-4);
+        let abs_value = if value >= 0.0 { value } else { -value };
+        let e = abs_value >= 1.0e+9 || (abs_value != 0.0 && abs_value < 1.0e-4);
         let result = if self
             .options
             .has_flag(PerfConvertOptions::FloatExtraPrecision)
@@ -1001,8 +1001,8 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
 
     /// Writes an `f64`, respecting [`PerfConvertOptions::FloatExtraPrecision`] flag.
     pub fn write_float64(&mut self, value: f64) -> fmt::Result {
-        let value_pos = if value >= 0.0 { value } else { -value };
-        let e = value_pos >= 1.0e+17 || (value_pos != 0.0 && value_pos < 1.0e-4);
+        let abs_value = if value >= 0.0 { value } else { -value };
+        let e = abs_value >= 1.0e+17 || (abs_value != 0.0 && abs_value < 1.0e-4);
         let result = if self
             .options
             .has_flag(PerfConvertOptions::FloatExtraPrecision)
