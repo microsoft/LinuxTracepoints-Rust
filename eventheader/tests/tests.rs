@@ -572,3 +572,19 @@ fn write_event() {
         char8_cp1252("A", &b'A'),
     );
 }
+
+eventheader::define_provider!(
+    TEST,
+    "Testing_TestComponent");
+
+macro_rules! log {
+    ($name:literal) => {
+        eventheader::write_event!(TEST, $name );
+    };
+}
+    
+#[test]
+fn nested_macro_usage() {
+    // testing that these statements expand and compile
+    log!("hello");
+}
