@@ -96,10 +96,10 @@ impl<'a> Parser<'a> {
         error_message: &str,
     ) -> Option<(String, Span)> {
 	let tree = self.move_next();
-	self.next_string_literal_stream(tree, constraints, error_message)
+	self.next_string_literal_token(tree, constraints, error_message)
     }
     
-    pub fn next_string_literal_stream(
+    pub fn next_string_literal_token(
         &mut self,
 	tokens: Option<TokenTree>,
         constraints: ArgConstraints,
@@ -109,11 +109,11 @@ impl<'a> Parser<'a> {
             Some(TokenTree::Literal(literal)) => {
 		self.consume_literal(literal, constraints, error_message)
             }
-            Some(TokenTree::Group(group)) => {
-		if let Delimiter::None = group.delimiter() {
+            Some(TokenTree::Group(group))
+		if Delimiter::None == group.delimiter() => {
 		    let mut contents: Vec<_> = group.stream().into_iter().collect();
 		    if contents.len() == 1 {
-			self.next_string_literal_stream(contents.pop(), constraints, error_message)
+			self.next_string_literal_token(contents.pop(), constraints, error_message)
 		    } else {
 			self.errors.add(group.span(), error_message);
 			if self.skip_to_comma(contents.pop()) {
@@ -121,14 +121,7 @@ impl<'a> Parser<'a> {
 			}
 			None
 		    }
-		} else {
-                    self.errors.add(group.span(), error_message);
-                    if self.skip_to_comma(None) {
-			self.comma_after_item(constraints);
-                    }
-                    None
 		}
-	    }
             Some(token) => {
                 self.errors.add(token.span(), error_message);
                 if self.skip_to_comma(Some(token)) {

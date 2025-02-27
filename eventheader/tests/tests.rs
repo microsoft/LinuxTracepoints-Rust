@@ -581,10 +581,14 @@ macro_rules! log {
     ($name:literal) => {
         eventheader::write_event!(TEST, $name );
     };
+    ($name:literal, $($field:tt)*) => {
+        eventheader::write_event!(TEST, $name, $($field)*);
+    };
 }
     
 #[test]
 fn nested_macro_usage() {
     // testing that these statements expand and compile
     log!("hello");
+    log!("hello", u32("world", &1u32));
 }
