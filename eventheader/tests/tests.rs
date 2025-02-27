@@ -591,4 +591,5 @@ fn nested_macro_usage() {
     // testing that these statements expand and compile
     log!("hello");
     log!("hello", u32("world", &1u32));
+    log!("hello", u32("key1", &1u32), str8("key2", "value"), );
 }
