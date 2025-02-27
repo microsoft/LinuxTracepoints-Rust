@@ -98,7 +98,8 @@ impl<'a> Parser<'a> {
 	let tree = self.move_next();
 	self.next_string_literal_token(tree, constraints, error_message)
     }
-    
+
+    /// Processes the next TokenTree in a context where a literal string is expected.
     pub fn next_string_literal_token(
         &mut self,
 	tokens: Option<TokenTree>,
@@ -136,7 +137,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Consumes a literal via patterns expressed in next_string_literal().
+    /// Consumes a literal through patterns expressed in next_string_literal_token().
     fn consume_literal(&mut self, literal: Literal, constraints: ArgConstraints, error_message: &str) -> Option<(String, Span)> {
         let lit_str = literal.to_string();
         if lit_str.len() < 2 || !lit_str.starts_with('"') || !lit_str.ends_with('"') {
