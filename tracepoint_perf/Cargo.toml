@@ -8,9 +8,9 @@ description = "Rust API for reading and writing perf.data files"
 keywords = [
     "user_events",
     "eventheader",
-    "perf.data",
     "tracepoints",
     "trace",
+    "logging",
 ]
 categories = [
     "api-bindings",
