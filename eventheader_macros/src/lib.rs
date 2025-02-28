@@ -4,6 +4,20 @@
 #![allow(clippy::needless_return)]
 
 //! Implements the macros that are exported by the eventheader crate.
+//!
+//! # Changelog
+//!
+//! ## v0.4.1 (TBD)
+//! - Handle invisible delimiters to support use of eventheader macros from
+//!   within other macros.
+//!
+//! ## v0.3.0 (2023-06-29)
+//! - If no consumers have enabled a tracepoint, the kernel now returns
+//!   `EBADF`. The eventheader crate has been updated to be consistent with
+//!   the new behavior.
+//!
+//! ## v0.2.0 (2023-05-16)
+//! - Add support for macro-based logging.
 
 extern crate proc_macro;
 use proc_macro::{Span, TokenStream};
