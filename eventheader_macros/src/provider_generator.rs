@@ -128,7 +128,7 @@ impl ProviderGenerator {
             // #[no_mangle]
             .add_punct("#")
             .add_group_square(self.tree1.add_ident("no_mangle").drain())
-            // static _eh_define_provider_MY_PROVIDER: *const usize = ::core::ptr::null();
+            // static _eh_define_provider_MY_PROVIDER: usize = 0;
             .add_ident("static")
             .add_ident(&String::from_iter([PROVIDER_PTR_VAR_PREFIX, &provider_sym]))
             .add_punct(":")
