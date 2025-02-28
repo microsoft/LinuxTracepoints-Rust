@@ -6,7 +6,7 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
-/// # v0.4.1 (TBD)
+/// # v0.4.1 (2025-02-28)
 /// - Add support for the `BinaryLength16Char8` encoding via
 ///   [`EventBuilder::add_binary`].
 pub mod v0_4_1 {}

@@ -31,7 +31,7 @@ macros = ["dep:eventheader_macros"]
 [dependencies]
 tracepoint = { default-features = false, version = "= 0.4.0", path = "../tracepoint" }
 eventheader_types = { version = "= 0.4.1", path = "../eventheader_types" }
-eventheader_macros = { optional = true, version = "= 0.3.0", path = "../eventheader_macros" }
+eventheader_macros = { optional = true, version = "= 0.4.1", path = "../eventheader_macros" }
 
 [dev-dependencies]
 uuid  = ">= 1.1"
