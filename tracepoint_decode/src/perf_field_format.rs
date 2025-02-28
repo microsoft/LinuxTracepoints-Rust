@@ -98,6 +98,7 @@ impl PerfFieldFormat {
         size: u16,
         signed: Option<bool>,
     ) -> Self {
+        #[cfg(debug_assertions)]
         const SIZEOF_U8: u16 = 1;
         const SIZEOF_U16: u16 = 2;
         const SIZEOF_U32: u16 = 4;

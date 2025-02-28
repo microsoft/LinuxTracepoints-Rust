@@ -210,6 +210,7 @@ impl<'wri, W: fmt::Write + ?Sized> JsonWriter<'wri, W> {
 
     /// For use before a value or member.
     /// Writes: comma?-newline-indent? i.e. `,\n  `.
+    #[cfg(test)]
     pub fn write_newline_before_value(&mut self, indent: usize) -> fmt::Result {
         if self.0.json_comma {
             self.0.dest.write_ascii(b',')?;
@@ -234,6 +235,7 @@ impl<'wri, W: fmt::Write + ?Sized> JsonWriter<'wri, W> {
     }
 
     /// Writes: `, "escaped-name":`
+    #[cfg(test)]
     pub fn write_property_name(&mut self, name: &str) -> fmt::Result {
         self.write_raw_comma_space()?;
         self.0.json_comma = false;
@@ -760,8 +762,9 @@ impl<'wri, W: fmt::Write + ?Sized> ValueWriter<'wri, W> {
 
     /// Writes e.g. `a3a2a1a0-b1b0-c1c0-d7d6-d5d4d3d2d1d0`.
     pub fn write_uuid(&mut self, value: &[u8; 16]) -> fmt::Result {
+        let tmp = Guid::from_bytes_be(value).to_utf8_bytes();
         return self.dest.write_str(unsafe {
-            str::from_utf8_unchecked(&Guid::from_bytes_be(value).to_utf8_bytes())
+            str::from_utf8_unchecked(&tmp)
         });
     }
 
