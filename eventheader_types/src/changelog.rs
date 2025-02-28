@@ -6,7 +6,7 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
-/// # v0.4.1 (TBD)
+/// # v0.4.1 (2025-02-28)
 /// - Move eventheader types from `eventheader` into new `eventheader_types` crate.
 /// - New field encoding `BinaryLength16Char8`. Same as
 ///   `StringLength16Char8` except that its default format

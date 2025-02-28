@@ -7,7 +7,7 @@
 //!
 //! # Changelog
 //!
-//! ## v0.4.1 (TBD)
+//! ## v0.4.1 (2025-02-28)
 //! - Handle invisible delimiters to support use of eventheader macros from
 //!   within other macros.
 //!
