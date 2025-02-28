@@ -6,10 +6,11 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
-/// # v0.4.1 (TBD)
+/// # v0.4.1 (2025-02-28)
 /// - Move eventheader types into separate `eventheader_types` crate.
-/// - `!write_event` macro now handles invisible delimiters to support use from
+/// - `write_event!` macro now handles invisible delimiters to support use from
 ///   within other macros.
+/// - Fix errors using the `write_event!` macro in Rust 2024 edition crates.
 pub mod v0_4_1 {}
 
 /// # v0.4.0 (2024-04-12)
