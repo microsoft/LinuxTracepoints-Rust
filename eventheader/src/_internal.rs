@@ -102,8 +102,10 @@ pub const fn time_from_duration_before_1970(duration: Duration) -> i64 {
 /// Caller is responsible for making sure there is sufficient space in the buffer.
 unsafe fn append_bytes<T: Sized>(dst: *mut u8, src: &T) -> *mut u8 {
     let size = mem::size_of::<T>();
-    ptr::copy_nonoverlapping(src as *const T as *const u8, dst, size);
-    return dst.add(size);
+    unsafe {
+        ptr::copy_nonoverlapping(src as *const T as *const u8, dst, size);
+        return dst.add(size);
+    }
 }
 
 /// Fills in `data[0]` with the event's write_index, event_header,
