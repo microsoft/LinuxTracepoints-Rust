@@ -573,9 +573,7 @@ fn write_event() {
     );
 }
 
-eventheader::define_provider!(
-    TEST,
-    "Testing_TestComponent");
+eventheader::define_provider!(TEST, "Testing_TestComponent");
 
 macro_rules! log {
     ($name:literal) => {
@@ -585,11 +583,11 @@ macro_rules! log {
         eventheader::write_event!(TEST, $name, $($field)*);
     };
 }
-    
+
 #[test]
 fn nested_macro_usage() {
     // testing that these statements expand and compile
     log!("hello");
     log!("hello", u32("world", &1u32));
-    log!("hello", u32("key1", &1u32), str8("key2", "value"), );
+    log!("hello", u32("key1", &1u32), str8("key2", "value"));
 }

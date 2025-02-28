@@ -54,7 +54,7 @@ impl<'a> Parser<'a> {
             }
             Some(token) => {
                 self.unexpected_token_before_end(constraints, token.span());
-                self.skip_to_comma(Some(token));
+                self.skip_to_comma(token);
             }
             None => (),
         };
@@ -75,7 +75,7 @@ impl<'a> Parser<'a> {
             }
             Some(token) => {
                 self.errors.add(token.span(), error_message);
-                if self.skip_to_comma(Some(token)) {
+                if self.skip_to_comma(token) {
                     self.comma_after_item(constraints);
                 }
                 result = None;
@@ -95,68 +95,66 @@ impl<'a> Parser<'a> {
         constraints: ArgConstraints,
         error_message: &str,
     ) -> Option<(String, Span)> {
-	let tree = self.move_next();
-	self.next_string_literal_token(tree, constraints, error_message)
+        let tree = self.move_next();
+        self.next_string_literal_token(tree, constraints, error_message)
     }
 
     /// Processes the next TokenTree in a context where a literal string is expected.
     pub fn next_string_literal_token(
         &mut self,
-	tokens: Option<TokenTree>,
+        tokens: Option<TokenTree>,
         constraints: ArgConstraints,
         error_message: &str,
     ) -> Option<(String, Span)> {
+        let result;
         match tokens {
             Some(TokenTree::Literal(literal)) => {
-		self.consume_literal(literal, constraints, error_message)
+                let lit_str = literal.to_string();
+                if lit_str.len() < 2 || !lit_str.starts_with('"') || !lit_str.ends_with('"') {
+                    self.errors.add(literal.span(), error_message);
+                    if self.skip_to_comma(TokenTree::Literal(literal)) {
+                        self.comma_after_item(constraints);
+                    }
+                    result = None;
+                } else {
+                    if let Some(unescaped) = unescape(&lit_str[1..lit_str.len() - 1]) {
+                        result = Some((unescaped, literal.span()));
+                    } else {
+                        self.errors
+                            .add(literal.span(), "unsupported escape sequence");
+                        result = None;
+                    }
+                    self.next_comma(constraints);
+                }
             }
-            Some(TokenTree::Group(group))
-		if Delimiter::None == group.delimiter() => {
-		    let mut contents: Vec<_> = group.stream().into_iter().collect();
-		    if contents.len() == 1 {
-			self.next_string_literal_token(contents.pop(), constraints, error_message)
-		    } else {
-			self.errors.add(group.span(), error_message);
-			if self.skip_to_comma(contents.pop()) {
-			    self.comma_after_item(constraints);
-			}
-			None
-		    }
-		}
+            Some(TokenTree::Group(group)) if Delimiter::None == group.delimiter() => {
+                let mut contents: Vec<_> = group.stream().into_iter().collect();
+                if contents.len() == 1 {
+                    result =
+                        self.next_string_literal_token(contents.pop(), constraints, error_message);
+                } else {
+                    self.errors.add(group.span(), error_message);
+                    if let Some(token) = contents.pop() {
+                        if self.skip_to_comma(token) {
+                            self.comma_after_item(constraints);
+                        }
+                    }
+                    result = None;
+                }
+            }
             Some(token) => {
                 self.errors.add(token.span(), error_message);
-                if self.skip_to_comma(Some(token)) {
+                if self.skip_to_comma(token) {
                     self.comma_after_item(constraints);
                 }
-                None
+                result = None;
             }
             None => {
                 self.eos_before_item(constraints, error_message);
-                None
+                result = None;
             }
         }
-    }
-
-    /// Consumes a literal through patterns expressed in next_string_literal_token().
-    fn consume_literal(&mut self, literal: Literal, constraints: ArgConstraints, error_message: &str) -> Option<(String, Span)> {
-        let lit_str = literal.to_string();
-        if lit_str.len() < 2 || !lit_str.starts_with('"') || !lit_str.ends_with('"') {
-            self.errors.add(literal.span(), error_message);
-            if self.skip_to_comma(Some(TokenTree::Literal(literal))) {
-                self.comma_after_item(constraints);
-            }
-	    None
-        } else {
-            let result = if let Some(unescaped) = unescape(&lit_str[1..lit_str.len() - 1]) {
-                Some((unescaped, literal.span()))
-            } else {
-                self.errors
-                    .add(literal.span(), "unsupported escape sequence");
-                None
-            };
-            self.next_comma(constraints);
-	    result
-        }
+        return result;
     }
 
     /// Reads tokens to the next comma or the end-of-stream.
@@ -186,7 +184,7 @@ impl<'a> Parser<'a> {
                     Some(TokenTree::Punct(punct)) if punct.as_char() == ';' => {
                         // Treat ';' as invalid at top level of arguments.
                         self.unexpected_token_before_end(constraints, punct.span());
-                        self.skip_to_comma(Some(punct.into()));
+                        self.skip_to_comma(punct.into());
                         state = State::Done;
                         return None;
                     }
@@ -239,7 +237,7 @@ impl<'a> Parser<'a> {
                         }
                         Some(token) => {
                             self.errors.add(token.span(), EXPECTED_OPTION_ARGS);
-                            self.skip_to_comma(Some(token));
+                            self.skip_to_comma(token);
                             continue;
                         }
                         None => {
@@ -267,7 +265,7 @@ impl<'a> Parser<'a> {
                             EXPECTED_OPTION
                         },
                     );
-                    self.skip_to_comma(Some(token));
+                    self.skip_to_comma(token);
                     continue;
                 }
                 None => {
@@ -292,9 +290,9 @@ impl<'a> Parser<'a> {
     /// If skip_to_comma returns true, you may want to call comma_after_item.
     ///
     /// `while current() != ',' && current() != None { move_next(); }`
-    fn skip_to_comma(&mut self, next_token: Option<TokenTree>) -> bool {
+    fn skip_to_comma(&mut self, next_token: TokenTree) -> bool {
         let result;
-        let mut current = next_token;
+        let mut current = Some(next_token);
         loop {
             match current {
                 None => {
