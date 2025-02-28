@@ -95,8 +95,19 @@ impl<'a> Parser<'a> {
         constraints: ArgConstraints,
         error_message: &str,
     ) -> Option<(String, Span)> {
+        let tree = self.move_next();
+        self.next_string_literal_token(tree, constraints, error_message)
+    }
+
+    /// Processes the next TokenTree in a context where a literal string is expected.
+    pub fn next_string_literal_token(
+        &mut self,
+        tokens: Option<TokenTree>,
+        constraints: ArgConstraints,
+        error_message: &str,
+    ) -> Option<(String, Span)> {
         let result;
-        match self.move_next() {
+        match tokens {
             Some(TokenTree::Literal(literal)) => {
                 let lit_str = literal.to_string();
                 if lit_str.len() < 2 || !lit_str.starts_with('"') || !lit_str.ends_with('"') {
@@ -114,6 +125,21 @@ impl<'a> Parser<'a> {
                         result = None;
                     }
                     self.next_comma(constraints);
+                }
+            }
+            Some(TokenTree::Group(group)) if Delimiter::None == group.delimiter() => {
+                let mut contents: Vec<_> = group.stream().into_iter().collect();
+                if contents.len() == 1 {
+                    result =
+                        self.next_string_literal_token(contents.pop(), constraints, error_message);
+                } else {
+                    self.errors.add(group.span(), error_message);
+                    if let Some(token) = contents.pop() {
+                        if self.skip_to_comma(token) {
+                            self.comma_after_item(constraints);
+                        }
+                    }
+                    result = None;
                 }
             }
             Some(token) => {
