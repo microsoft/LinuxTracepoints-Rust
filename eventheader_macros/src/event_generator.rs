@@ -239,7 +239,7 @@ impl EventGenerator {
         const _EH_KEYWORD = keywords...;
         const _EH_TAGn: u16 = TAGn;
         static _EH_TRACEPOINT = EventHeaderTracepoint::new(...);
-        static _EH_TRACEPOINT_PTR = &_EH_TRACEPOINT;
+        static mut _EH_TRACEPOINT_PTR = &_EH_TRACEPOINT;
         if !_EH_TRACEPOINT.enabled() {
             9u32 // EBADF
         } else {
@@ -309,13 +309,11 @@ impl EventGenerator {
                     .drain(),
             )
             .add_punct(";")
-            // identity::<&* const usize>(&_eh_define_provider_MY_PROVIDER) // ensure compile error for aliased provider symbol
+            // identity::<&usize>(&_eh_define_provider_MY_PROVIDER) // ensure compile error for aliased provider symbol
             .add_path(IDENTITY_PATH)
             .add_punct("::")
             .add_punct("<")
             .add_punct("&")
-            .add_punct("*")
-            .add_ident("const")
             .add_scalar_type_path(&mut self.tree2, USIZE_PATH, 0)
             .add_punct(">")
             .add_group_paren(
