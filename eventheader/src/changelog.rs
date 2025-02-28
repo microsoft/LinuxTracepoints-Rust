@@ -8,6 +8,8 @@ use crate::*; // For docs
 
 /// # v0.4.1 (TBD)
 /// - Move eventheader types into separate `eventheader_types` crate.
+/// - `!write_event` macro now handles invisible delimiters to support use from
+///   within other macros.
 pub mod v0_4_1 {}
 
 /// # v0.4.0 (2024-04-12)
