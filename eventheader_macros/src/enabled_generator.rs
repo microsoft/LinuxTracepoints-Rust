@@ -55,13 +55,11 @@ impl EnabledGenerator {
                     .drain(),
             )
             .add_punct(";")
-            // identity::<&* const usize>(&_eh_define_provider_MY_PROVIDER) // ensure compile error for aliased provider symbol
+            // identity::<&usize>(&_eh_define_provider_MY_PROVIDER) // ensure compile error for aliased provider symbol
             .add_path(IDENTITY_PATH)
             .add_punct("::")
             .add_punct("<")
             .add_punct("&")
-            .add_punct("*")
-            .add_ident("const")
             .add_scalar_type_path(&mut self.tree2, USIZE_PATH, 0)
             .add_punct(">")
             .add_group_paren(

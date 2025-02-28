@@ -128,16 +128,13 @@ impl ProviderGenerator {
             // #[no_mangle]
             .add_punct("#")
             .add_group_square(self.tree1.add_ident("no_mangle").drain())
-            // static mut _eh_define_provider_MY_PROVIDER: *const usize = ::core::ptr::null();
+            // static _eh_define_provider_MY_PROVIDER: usize = 0;
             .add_ident("static")
-            .add_ident("mut")
             .add_ident(&String::from_iter([PROVIDER_PTR_VAR_PREFIX, &provider_sym]))
             .add_punct(":")
-            .add_punct("*")
-            .add_ident("const")
             .add_path(USIZE_PATH)
             .add_punct("=")
-            .add_path_call(NULL_PATH, [])
+            .add_literal(Literal::usize_unsuffixed(0))
             .add_punct(";")
             // #[cfg(target_os = "linux")]
             .add_cfg_linux()
