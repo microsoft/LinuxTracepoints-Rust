@@ -199,7 +199,7 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     /// value as the [PerfNonSampleEventInfo::name] method, but as a Display object (can
     /// be passed to a format macro) and with JSON escaping applied (control chars,
     /// quotes, and backslashes are escaped)
-    pub fn json_name_display(&self) -> display::JsonEscapeDisplay {
+    pub fn json_name_display(&self) -> display::JsonEscapeDisplay<'_> {
         display::JsonEscapeDisplay::new(self.name())
     }
 
@@ -230,7 +230,7 @@ impl<'a> PerfNonSampleEventInfo<'a> {
     /// - `"tid": 124` (omitted if unavailable or if pid is shown and pid == tid)
     /// - `"provider": "SystemName"` (omitted if unavailable)
     /// - `"event": "TracepointName"` (omitted if unavailable)
-    pub const fn json_meta_display(&self) -> display::EventInfoJsonMetaDisplay {
+    pub const fn json_meta_display(&self) -> display::EventInfoJsonMetaDisplay<'_> {
         display::EventInfoJsonMetaDisplay::new(
             self.session_info,
             self.event_desc,
@@ -398,7 +398,7 @@ impl<'a> PerfSampleEventInfo<'a> {
     /// value as the [PerfSampleEventInfo::name] method, but as a Display object (can
     /// be passed to a format macro) and with JSON escaping applied (control chars,
     /// quotes, and backslashes are escaped)
-    pub fn json_name_display(&self) -> display::JsonEscapeDisplay {
+    pub fn json_name_display(&self) -> display::JsonEscapeDisplay<'_> {
         display::JsonEscapeDisplay::new(self.name())
     }
 
@@ -471,7 +471,7 @@ impl<'a> PerfSampleEventInfo<'a> {
     /// - `"tid": 124` (omitted if unavailable or if pid is shown and pid == tid)
     /// - `"provider": "SystemName"` (omitted if unavailable)
     /// - `"event": "TracepointName"` (omitted if unavailable)
-    pub const fn json_meta_display(&self) -> display::EventInfoJsonMetaDisplay {
+    pub const fn json_meta_display(&self) -> display::EventInfoJsonMetaDisplay<'_> {
         display::EventInfoJsonMetaDisplay::new(
             self.session_info,
             self.event_desc,

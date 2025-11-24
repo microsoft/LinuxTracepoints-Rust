@@ -243,7 +243,7 @@ impl PerfDataFileReader {
 
     /// Returns the header and data of the current event.
     /// If there is no current event, returns a default-constructed `PerfEventBytes`.
-    pub fn current_event(&self) -> PerfEventBytes {
+    pub fn current_event(&self) -> PerfEventBytes<'_> {
         if self.current.range.len() < PERF_EVENT_HEADER_SIZE {
             return PerfEventBytes::new(PerfEventHeader::default(), &[]);
         } else {

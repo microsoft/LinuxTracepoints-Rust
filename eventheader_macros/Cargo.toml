@@ -7,7 +7,7 @@ license = "MIT"
 description = "Rust macros for eventheader-encoded Linux Tracepoints via user_events"
 repository = "https://github.com/microsoft/LinuxTracepoints-Rust"
 readme = "README.md"
-rust-version = "1.63"
+rust-version = "1.64"
 
 [lib]
 proc-macro = true

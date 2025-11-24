@@ -402,7 +402,7 @@ impl Ord for EventSet {
 
 impl PartialOrd for EventSet {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.key.cmp(&other.key))
+        Some(self.cmp(other))
     }
 }
 
