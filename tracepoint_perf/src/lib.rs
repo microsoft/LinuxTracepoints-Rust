@@ -12,6 +12,8 @@ pub use file_reader::PerfDataFileReader;
 pub use file_writer::PerfDataFileWriter;
 pub use header_index::PerfHeaderIndex;
 
+pub mod changelog;
+
 mod file_abi;
 mod file_reader;
 mod file_writer;
