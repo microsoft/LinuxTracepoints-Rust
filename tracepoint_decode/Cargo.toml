@@ -20,7 +20,7 @@ categories = [
 ]
 repository = "https://github.com/microsoft/LinuxTracepoints-Rust"
 readme = "README.md"
-rust-version = "1.74"
+rust-version = "1.64"
 
 [features]
 default = ["rustc_1_77"]

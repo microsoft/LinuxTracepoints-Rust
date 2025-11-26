@@ -127,7 +127,7 @@ impl<T: BinaryField> BinaryFieldEncoding for T {}
 /// - If appropriate, configure other event options by calling:
 ///   - `builder.id_version(id, ver)` to set a manually-assigned event id and version.
 ///   - `builder.opcode(opcode)` to specify special semantics for the event, e.g.
-///      activity-start or activity-stop.
+///     activity-start or activity-stop.
 /// - Call `builder.write(event_set, activity_id, related_id)` to
 ///   send the event to the kernel.
 ///   - `activity_id` is an optional 128-bit value that can be used during trace
@@ -744,7 +744,7 @@ impl EventBuilder {
     /// - `field_name` should be a short and distinct string that describes the field.
     ///
     /// - `field_value` provides the data for the field as a `&[ELEMENT]`, i.e. `&[u8]`
-    ///    or `&[i8]`.
+    ///   or `&[i8]`.
     ///
     /// - `format` indicates how the decoder should interpret the field data. For example,
     ///   if the field value is a binary blob, you would likely set `format` to

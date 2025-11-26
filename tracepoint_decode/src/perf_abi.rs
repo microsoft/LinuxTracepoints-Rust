@@ -1385,7 +1385,7 @@ impl PerfEventHeader {
     /// Reads a PerfEventHeader from a byte array.
     /// - If byte_reader.byte_swap_needed(), returns a byte-swapped copy of `bytes[0..8]`.
     /// - Otherwise, returns `bytes[0..8]`.
-    pub const fn from_bytes(bytes: &[u8; 8], byte_reader: PerfByteReader) -> Self {
+    pub fn from_bytes(bytes: &[u8; 8], byte_reader: PerfByteReader) -> Self {
         let header: PerfEventHeader = unsafe { mem::transmute_copy(bytes) };
         if byte_reader.byte_swap_needed() {
             return header.byte_swap_copy();
