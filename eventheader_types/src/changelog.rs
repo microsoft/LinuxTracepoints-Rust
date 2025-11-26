@@ -6,6 +6,10 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
+/// # v0.5.0 (2025-11-26)
+/// - Fix clippy issues for Rust 1.91.
+pub mod v0_5_0 {}
+
 /// # v0.4.1 (2025-02-28)
 /// - Move eventheader types from `eventheader` into new `eventheader_types` crate.
 /// - New field encoding `BinaryLength16Char8`. Same as

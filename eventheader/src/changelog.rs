@@ -6,6 +6,11 @@
 #[allow(unused_imports)]
 use crate::*; // For docs
 
+/// # v0.5.0 (2025-11-26)
+/// - Fix linker issues with newer Rust versions.
+/// - Fix clippy issues for Rust 1.91.
+pub mod v0_5_0 {}
+
 /// # v0.4.1 (2025-02-28)
 /// - Move eventheader types into separate `eventheader_types` crate.
 /// - `write_event!` macro now handles invisible delimiters to support use from
