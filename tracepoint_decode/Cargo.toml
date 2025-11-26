@@ -30,7 +30,7 @@ default = ["rustc_1_77"]
 rustc_1_77 = []
 
 [dependencies]
-eventheader_types = { version = "= 0.4.1", path = "../eventheader_types" }
+eventheader_types = { version = "= 0.5.0", path = "../eventheader_types" }
 
 [dev-dependencies]
 zip = ">= 2.1"
