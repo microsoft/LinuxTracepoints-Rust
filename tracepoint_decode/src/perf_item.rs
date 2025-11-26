@@ -901,7 +901,7 @@ impl<'dat> PerfItemValue<'dat> {
     ///
     /// For example, `write!(writer, "{}", value.display())` might generate a string
     /// like `53`, `true`, `Hello`, or `1, 2, 3`.
-    pub fn display(&self) -> display::PerfItemValueDisplay {
+    pub fn display(&self) -> display::PerfItemValueDisplay<'_> {
         return display::PerfItemValueDisplay::new(self);
     }
 
@@ -1192,7 +1192,7 @@ impl<'dat> PerfItemValue<'dat> {
     ///
     /// For example, `write!(str, "{}", value.json_display())` might generate a string
     /// like `53`, `true`, `"Hello"`, or `[1, 2, 3]`.
-    pub fn json_display(&self) -> display::PerfItemValueJsonDisplay {
+    pub fn json_display(&self) -> display::PerfItemValueJsonDisplay<'_> {
         return display::PerfItemValueJsonDisplay::new(self);
     }
 

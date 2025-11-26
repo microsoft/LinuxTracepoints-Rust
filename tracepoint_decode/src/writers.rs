@@ -104,7 +104,7 @@ pub mod date_time {
                 tm: unsafe { core::mem::zeroed() },
             };
 
-            if unsafe { core::ptr::null() == libc::gmtime_r(&value, &mut this.tm) } {
+            if unsafe { libc::gmtime_r(&value, &mut this.tm).is_null() } {
                 this.tm.tm_mday = 0;
             }
 

@@ -19,7 +19,7 @@ categories = [
 ]
 repository = "https://github.com/microsoft/LinuxTracepoints-Rust"
 readme = "README.md"
-rust-version = "1.63"
+rust-version = "1.64"
 
 [dependencies]
 eventheader_types = { version = "= 0.4.1", path = "../eventheader_types" }
