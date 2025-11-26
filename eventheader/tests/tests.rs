@@ -122,7 +122,7 @@ fn define_provider() {
         eh::provider_enabled!(PROV1, eh::Level::Verbose, 1)
     }
 
-    let _u = Unregister(&PROV1);
+    let _u1 = Unregister(&PROV1);
     assert!(!prov1_enabled());
     PROV1.unregister();
     assert!(!prov1_enabled());

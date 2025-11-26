@@ -128,6 +128,9 @@ impl ProviderGenerator {
             // #[no_mangle]
             .add_punct("#")
             .add_group_square(self.tree1.add_ident("no_mangle").drain())
+            // #[used]
+            .add_punct("#")
+            .add_group_square(self.tree1.add_ident("used").drain())
             // static _eh_define_provider_MY_PROVIDER: usize = 0;
             .add_ident("static")
             .add_ident(&String::from_iter([PROVIDER_PTR_VAR_PREFIX, &provider_sym]))
@@ -138,6 +141,13 @@ impl ProviderGenerator {
             .add_punct(";")
             // #[cfg(target_os = "linux")]
             .add_cfg_linux()
+            // #[allow(static_mut_refs)]
+            .add_outer_attribute(
+                "allow",
+                self.tree1
+                    .add_ident("static_mut_refs")
+                    .drain(),
+            )
             // static MY_PROVIDER: eh::Provider = unsafe { ... };
             .add_ident("static")
             .add_token(provider.symbol)

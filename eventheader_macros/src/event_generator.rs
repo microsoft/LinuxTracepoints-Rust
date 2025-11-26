@@ -165,6 +165,9 @@ impl EventGenerator {
                     ])))
                     .drain(),
             )
+            // #[used]
+            .add_punct("#")
+            .add_group_square(self.tree1.add_ident("used").drain())
             // static mut _EH_TRACEPOINT_PTR: *const ehi::EventHeaderTracepoint = &_EH_TRACEPOINT;
             .add_ident("static")
             .add_ident("mut")
@@ -318,18 +321,13 @@ impl EventGenerator {
             .add_punct(">")
             .add_group_paren(
                 self.tree1
-                    .add_ident("unsafe")
-                    .add_group_curly(
-                        self.tree2
-                            .add_punct("&")
-                            .push_span(provider_symbol_span)
-                            .add_ident(&String::from_iter([
-                                PROVIDER_PTR_VAR_PREFIX,
-                                &provider_symbol_string,
-                            ]))
-                            .pop_span()
-                            .drain(),
-                    )
+                    .add_punct("&")
+                    .push_span(provider_symbol_span)
+                    .add_ident(&String::from_iter([
+                        PROVIDER_PTR_VAR_PREFIX,
+                        &provider_symbol_string,
+                    ]))
+                    .pop_span()
                     .drain(),
             )
             .add_punct(";")

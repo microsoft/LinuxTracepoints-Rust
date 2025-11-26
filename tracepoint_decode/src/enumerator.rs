@@ -480,7 +480,7 @@ impl<'dat> EventHeaderItemInfo<'dat> {
 /// - Call `context.enumerate(tracepoint_name, event_data)` to get the enumerator for the event.
 ///   - `tracepoint_name` is the name of the tracepoint, e.g. "ProviderName_L1K2".
 ///   - `event_data` is the event's user data, starting with an the `eventheader_flags` header
-///      (starts immediately after the event's common fields).
+///     (starts immediately after the event's common fields).
 /// - Enumerator starts in the `BeforeFirstItem` state.
 /// - Use `event_info()` to get the event's name and attributes.
 /// - Call `move_next()` to move through the event items.
