@@ -939,7 +939,7 @@ impl PerfFieldFormat {
         }
 
         let element_size = self.element_size();
-        let mask = element_size as usize - 1;
+        let mask = (element_size as usize).saturating_sub(1);
         if 0 != (bytes.len() & mask) {
             bytes = &bytes[..bytes.len() & !mask];
         }
