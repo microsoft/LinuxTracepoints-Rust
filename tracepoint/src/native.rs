@@ -36,11 +36,11 @@ fn clear_errno() {
     unsafe { *linux::__errno_location() = 0 };
 }
 
-/// linux::open(path0, O_WRONLY)
+/// linux::open(path0, O_WRONLY | O_CLOEXEC)
 #[cfg(all(target_os = "linux", feature = "user_events"))]
 fn open_wronly(path0: &[u8]) -> ffi::c_int {
     assert!(path0.ends_with(&[0]));
-    return unsafe { linux::open(path0.as_ptr().cast::<ffi::c_char>(), linux::O_WRONLY) };
+    return unsafe { linux::open(path0.as_ptr().cast::<ffi::c_char>(), linux::O_WRONLY | linux::O_CLOEXEC) };
 }
 
 struct UserEventsDataFile {
